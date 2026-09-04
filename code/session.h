@@ -472,6 +472,7 @@ class SessionClass
 		//.....................................................................
 		// Debugging / Sync Bugs
 		//.....................................................................
+		void Read_Sync_Bug_Settings(void);
 		void Trap_Object(void);
 		bool Log_To_File(FILE *out);
 

@@ -863,7 +863,7 @@ GLOBAL_UNITS = [
     ("house.cpp", "HouseClass", ["Read_INI"],
      {"file": "map file", "group": "House (per-scenario)",
       "section_vars": {"hname": section_selectors.identifier("house")}}),
-    ("session.cpp", "SessionClass", ["Read_MultiPlayer_Settings"],
+    ("session.cpp", "SessionClass", ["Read_MultiPlayer_Settings", "Read_Sync_Bug_Settings"],
      {"file": "sun.ini", "group": "multiplayer settings"}),
     # Only the loose *.MPR directory scan reads settings here. The packet path
     # above it builds each entry through MultiMission's own constructor, which
