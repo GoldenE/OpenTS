@@ -142,7 +142,10 @@ Existing MSVC warnings remain; identify new warnings instead of treating the
 current warning set as clean.
 
 Behavior changes need focused, reproducible evidence. Automated checks must not
-depend on proprietary game assets or original executables.
+depend on proprietary game assets or original executables. For simulation
+changes, the replay harness in [Runtime testing](docs/TESTING.md) shows whether
+a fixed recording still produces the same sync dump, and its checklist covers
+what the dump cannot see.
 
 Continuous integration builds Win32 Debug and Release and runs the CTest suite
 for every pull request that touches the engine. It reports the same class of

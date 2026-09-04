@@ -23,6 +23,13 @@ supported by the current tree.
 Install Visual Studio 2022 with the **Desktop development with C++** workload,
 a Windows SDK, CMake 3.23 or newer, and Git for Windows.
 
+The tree includes ATL (`atlbase.h`) and the MFC resource header (`afxres.h`),
+so the **C++ ATL** and **C++ MFC** components for the latest build tools must
+be selected as well. The Build Tools edition does not add them with the
+workload; from the command line they are
+`Microsoft.VisualStudio.Component.VC.ATL` and
+`Microsoft.VisualStudio.Component.VC.ATLMFC`.
+
 ## Dependencies
 
 The renderer is built on [bgfx](https://github.com/bkaradzic/bgfx), vendored as the
@@ -149,7 +156,8 @@ contributions should not add new warnings.
 
 Build verification establishes that the supported toolchain compiles and links
 the configured targets and produces the listed artifacts. Runtime behavior is
-established separately, by play testing, and is outside this build-support
+established separately, by the replay harness and play testing that
+[Runtime testing](TESTING.md) describes, and is outside this build-support
 record.
 
 The repository contains no maps, movies, audio, or other original game assets.
