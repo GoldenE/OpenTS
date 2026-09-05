@@ -792,9 +792,7 @@ re-reviewed.
 
 ## Status
 
-Reviewed but not implemented. No phase has been started and no engine source has been
-modified. Phase 0 is the decision gate: it measures real per-tick pixel and lepton
-deltas in a live game, and the answer determines whether Phases 1-5 are worth building.
+Phase 0 is partially implemented on `fps-fix/phase-0`: disposable engine instrumentation and the September 4 replay measurements are committed. Release render-rate measurements, the deliberate calibration cases, and a heavy scene remain outstanding; see the Phase 0 results above. Phases 1-5 have not started. The measurement branch was rebased onto the merged baseline on September 5.
 
 The current text reflects three review cycles: the original dual adversarial pass, a
 source-verified deep dive (2026-08-27) that added the *Relationship to the HD
