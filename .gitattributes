@@ -1,0 +1,5 @@
+* text=auto
+
+# manage.py writes these with LF regardless of platform; keep the working
+# copy matching so regeneration does not show as a modification.
+manual/data/*.yaml text eol=lf
