@@ -520,6 +520,12 @@ ballistic arc, rockets, sparks and debris), all of which need a live session.
 **Verification:** Release build; skirmish; the log shows a simulation rate near 20, a
 render rate in the hundreds, and per-tick pixel deltas for the three cases above.
 
+**September 5 preparation:** PRs #2 and #1 merged into fork main `64383e2`, and this measurement branch was rebased onto it. Win32 Debug and Release builds passed before the additional instrumentation below; logs are in `baseline/rebase-debug-build-2026-09-05.log` and `baseline/rebase-release-build-2026-09-05.log`. No replay or live measurement was run on September 5 because the user deferred desktop access. The four-session replay check remains required.
+
+The original sweep omitted every `RTTI_INFANTRY`, making the required jumpjet calibration unobservable. The disposable instrumentation now records a separate `jumpjet` family for infantry whose type has `IsJumpJet`, including their ground movement and flight, and records the object type producing each pixel and lepton maximum. Ordinary infantry remain excluded. This is a measurement-only change: the sweep reads positions and type metadata and writes only its private counters, strings, and debug log; no simulation state, serialization, draw position, or production interpolation has changed. The Phase 0 calibration and gate remain open until the live cases are exercised.
+
+Both additional-instrumentation builds passed on September 5 with `& 'C:\Program Files\CMake\bin\cmake.exe' --build build --config Debug --target OpenTS -- /m /nodeReuse:false` and the same command with `--config Release`, using the existing VS 2022 Win32 configuration. Full logs are `baseline/calibration-debug-build-2026-09-05.log` and `baseline/calibration-release-build-2026-09-05.log`. Both report the existing C5055 warning in untouched `code/queue.cpp:4471`; no warning was reported for the changed measurement code. The builds were made before the measurement commit and carry a modified stamp. Runtime golden comparisons, render-rate measurements, and all live calibration remain unrun. No production manual change is needed for disposable private instrumentation; this phase record owns its measurement-log additions.
+
 ### Phase 1 — The render clock and the A/B gate
 *Files: new `code/interp.h`, `code/interp.cpp`; `code/mainloop.cpp`, `code/gscreen.cpp`, `code/options.h`, `code/options.cpp`. Depends on: Phase 0.*
 

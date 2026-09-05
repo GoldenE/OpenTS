@@ -37,6 +37,8 @@
 #include "fog.h"
 #include "globals.h"
 #include "goptions.h"
+#include "infantry.h"
+#include "infatype.h"
 #include "internet.h"
 #include "ipxmgr.h"
 #include "language\language.h"
@@ -47,6 +49,7 @@
 #include "msgloop.h"
 #include "mstimer.h"
 #include "netdlg.h"
+#include "objtype.h"
 #include "pcx.h"
 #include "queue.h"
 #include "rules.h"
@@ -68,6 +71,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <string>
 #include <unordered_map>
 
 //
@@ -97,15 +101,18 @@ enum MeasureFamily {
 	MEASURE_AIRCRAFT,
 	MEASURE_BULLET,
 	MEASURE_PARTICLE,
+	MEASURE_JUMPJET,
 	MEASURE_COUNT
 };
 
-char const * const MeasureFamilyName[MEASURE_COUNT] = {"unit", "air", "bullet", "particle"};
+char const * const MeasureFamilyName[MEASURE_COUNT] = {"unit", "air", "bullet", "particle", "jumpjet"};
 
 struct MeasureMaxima {
 	int PixelDelta[MEASURE_COUNT] = {};
 	int LeptonDelta[MEASURE_COUNT] = {};
 	int Samples[MEASURE_COUNT] = {};
+	std::string PixelType[MEASURE_COUNT];
+	std::string LeptonType[MEASURE_COUNT];
 	int SpanLastMs = 0;
 	int SpanMinMs = 0;
 	int SpanMaxMs = 0;
@@ -123,6 +130,10 @@ int Measure_Family(ObjectClass const * object)
 		case RTTI_AIRCRAFT: return(MEASURE_AIRCRAFT);
 		case RTTI_BULLET: return(MEASURE_BULLET);
 		case RTTI_PARTICLE: return(MEASURE_PARTICLE);
+		case RTTI_INFANTRY: {
+			InfantryClass const * infantry = static_cast<InfantryClass const *>(object);
+			return(infantry->Class != nullptr && infantry->Class->IsJumpJet ? MEASURE_JUMPJET : -1);
+		}
 		default: return(-1);
 	}
 }
@@ -162,8 +173,16 @@ void Measure_Tick_Deltas(void)
 				pixel = std::max(std::abs(to.X - from.X), std::abs(to.Y - from.Y));
 			}
 			MeasureSinceReport.Samples[family]++;
-			if (lepton > MeasureSinceReport.LeptonDelta[family]) MeasureSinceReport.LeptonDelta[family] = lepton;
-			if (pixel > MeasureSinceReport.PixelDelta[family]) MeasureSinceReport.PixelDelta[family] = pixel;
+			ObjectTypeClass const * type = object->Class_Of();
+			char const * name = type != nullptr ? static_cast<char const *>(type->IniName) : "unknown";
+			if (lepton > MeasureSinceReport.LeptonDelta[family]) {
+				MeasureSinceReport.LeptonDelta[family] = lepton;
+				MeasureSinceReport.LeptonType[family] = name;
+			}
+			if (pixel > MeasureSinceReport.PixelDelta[family]) {
+				MeasureSinceReport.PixelDelta[family] = pixel;
+				MeasureSinceReport.PixelType[family] = name;
+			}
 		}
 	}
 	MeasurePrevious.swap(current);
@@ -175,8 +194,8 @@ void Measure_Report(void)
 	DebugString("Measure: sim=%u/s render=%u/s ticks=%d span=%d ms (min %d max %d) frame=%d\n",
 		LastFramesPerSecond, LastRenderFramesPerSecond, m.Ticks, m.SpanLastMs, m.SpanMinMs, m.SpanMaxMs, (int)Frame);
 	for (int family = 0; family < MEASURE_COUNT; family++) {
-		DebugString("Measure:   %-8s samples=%-6d max px/tick=%-4d max lepton/tick=%d\n",
-			MeasureFamilyName[family], m.Samples[family], m.PixelDelta[family], m.LeptonDelta[family]);
+		DebugString("Measure:   %-8s samples=%-6d max px/tick=%-4d max lepton/tick=%d px-type=%s lepton-type=%s\n",
+			MeasureFamilyName[family], m.Samples[family], m.PixelDelta[family], m.LeptonDelta[family], m.PixelType[family].c_str(), m.LeptonType[family].c_str());
 	}
 	MeasureSinceReport = MeasureMaxima();
 }
