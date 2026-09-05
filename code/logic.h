@@ -61,3 +61,5 @@ extern unsigned FramesThisSecond;
 extern unsigned TotalFrames;
 extern unsigned LastFramesPerSecond;
 extern unsigned SecondsPassed;
+extern unsigned RenderFramesThisSecond;
+extern unsigned LastRenderFramesPerSecond;

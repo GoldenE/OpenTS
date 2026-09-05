@@ -416,16 +416,16 @@ repetition today.
 ### Phase 0 — Measure, and decide whether to continue
 *Files: `code/logic.h`, `code/logic.cpp`, `code/gscreen.cpp`, `code/mainloop.cpp`. Depends on: nothing.*
 
-- [ ] Add `RenderFramesThisSecond` / `LastRenderFramesPerSecond` beside the existing
+- [x] Add `RenderFramesThisSecond` / `LastRenderFramesPerSecond` beside the existing
       `FramesThisSecond` / `LastFramesPerSecond` (`code/logic.h:60-63`,
       `code/logic.cpp:88-91`), incremented at the top of `GScreenClass::Render()`
       (`code/gscreen.cpp:386`) — the single funnel for every composed frame. Do **not**
       repurpose the existing counter: `code/queue.cpp:2051` multiplies
       `LastFramesPerSecond` by a response time to derive network latency, so it must keep
       meaning the simulation rate.
-- [ ] Roll both over in the existing once-per-second `fps_timer` block
+- [x] Roll both over in the existing once-per-second `fps_timer` block
       (`code/mainloop.cpp:638-649`).
-- [ ] Emit a once-per-second `DebugString` from that block reporting: simulation rate,
+- [x] Emit a once-per-second `DebugString` from that block reporting: simulation rate,
       render rate, the measured tick span, and **the per-tick pixel-delta maxima
       accumulated since the last report, split by object family** (ground vehicles,
       aircraft, projectiles, particles — `RTTI_UNIT` / `RTTI_AIRCRAFT` / `RTTI_BULLET` /
@@ -435,7 +435,7 @@ repetition today.
       `(Frame & 7) == 7`, and requires the `-MPDEBUG` switch (`code/init.cpp:1809-1811`),
       so it is unusable for campaign measurement. `manual/changes/debug-log-console.md`
       documents the log that is always available.
-- [ ] The deltas are measured **once per simulation tick, across every display layer**:
+- [x] The deltas are measured **once per simulation tick, across every display layer**:
       immediately after `Logic.AI()` in `Main_Loop`, walk `DisplayClass::Layer[]`,
       compute each object's delta against a debug-only static side table in
       `mainloop.cpp` (object pointer to previous `Position`), fold it into its family's
@@ -474,6 +474,48 @@ repetition today.
       launch speed is computed from range and gravity (`code/weapon.cpp:242-251`),
       rockets, and the particle velocity families (sparks, debris). Record the lepton
       maxima per case in the plan.
+
+**Phase 0 results (2026-09-04).** Instrumentation on branch `fps-fix/phase-0`
+(`code/logic.h`, `code/logic.cpp`, `code/gscreen.cpp`, `code/mainloop.cpp`); every
+line reference above was re-verified against the tree before use and none had moved.
+The sweep runs immediately after `Logic.AI()` over all five `DisplayClass::Layer[]`
+lists, keyed by object address; the pixel figure is the largest absolute component of
+the delta between `Coord_To_Pixel_Absolute` projections (Z lift included), the lepton
+figure the largest absolute component of the 3-D lepton delta. `RTTI_UNIT` is vehicles
+only; infantry is not a plan family and was not measured.
+
+Live play was not available (the user was at the machine), so the deltas were taken by
+replaying the golden recordings in `baseline/golden/` on the Win32 Debug build,
+minimized and unattended through `tools/baseline/Invoke-VanillaBaseline.ps1`. Deltas
+are simulation state and do not depend on the configuration. With the instrumentation
+in place all four sessions still report `MATCH` at frame 300. Longer runs used a
+scratch manifest with `printCrcFrame` raised; a recording that runs out returns the
+engine to the menu, and a campaign session pauses whenever the window loses focus, so
+two of the long runs were cut short by ordinary desktop use.
+
+| Session | Frames observed | Vehicles px / lep | Aircraft px / lep | Bullets px / lep | Particles px / lep |
+|---|---|---|---|---|---|
+| `ts-gdi01` | 2,191 (whole recording) | 2 / 16 | 7 / 51 | none present | 3 / 9 |
+| `ts-nod01` | 300 | 4 / 32 | none present | none present | 6 / 42 |
+| `fs-gdi01` | 862 | 3 / 26 | none present | 6 / 57 | 8 / 56 |
+| `skirmish-gcanyon` | 981 (whole recording) | 2 / 13 | none present | none present | none present |
+
+Measured tick span: 31-33 ms in the three campaign sessions (simulation 30 ticks/s;
+the campaign runs at `GameSpeed` 2) and 47-49 ms in the skirmish (20 ticks/s at
+`GameSpeed` 3), matching the **D5** estimate of 48 ms. `GScreenClass::Render` ran
+1,000-3,900 times per second on the minimized Debug build; that is a Debug figure and
+is not the Release render rate the item below asks for.
+
+Provisional gate reading: the ordinary skirmish vehicles stayed at 1-2 px/tick
+(3-13 leptons), consistent with the estimate above; one campaign vehicle reached
+4 px/tick (32 leptons) for about a second in `NOD1A`, type not identified. Aircraft
+(7 px), bullets (6 px) and particles (up to 8 px) each gain several distinct sub-tick
+positions per tick. On this evidence the visible win is confined to air, projectiles and
+particles, as the section *What this will and will not visibly change* predicts.
+Largest lepton delta seen in any family: 57. Not measured, and required before the gate
+and calibration items are closed: a Release-build render rate, a heavy scene, and the
+deliberate calibration cases (veteran or speed-boosted vehicle, jumpjet, unguided
+ballistic arc, rockets, sparks and debris), all of which need a live session.
 
 **Verification:** Release build; skirmish; the log shows a simulation rate near 20, a
 render rate in the hundreds, and per-tick pixel deltas for the three cases above.

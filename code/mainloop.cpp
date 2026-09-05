@@ -29,6 +29,7 @@
 #include "command.h"
 #include "conquer.h"
 #include "data.h"
+#include "dbgprint.h"
 #include "debug.h"
 #include "dialog.h"
 #include "dsaudio.h"
@@ -66,6 +67,8 @@
 #include "special.hh"
 
 #include <algorithm>
+#include <cstdlib>
+#include <unordered_map>
 
 //
 // Special module globals for recording and playback
@@ -77,6 +80,108 @@ void Message_Input(KeyNumType &input);
 void Sync_Delay(void);
 void Multiplayer_Debug_Print(bool noframecheck);
 static void Do_Record_Playback(void);
+
+
+/*
+ * Disposable measurement for plans/fps-fix.md Phase 0. Once per simulation tick it
+ * records, per object family, the largest displacement any object made during that
+ * tick, in projected screen pixels and in leptons, and the once-per-second report
+ * below writes the maxima to the debug log. Keyed by object address, so a reused
+ * heap slot can pair a stale entry with a new object; that skews one log line and
+ * draws nothing, which is acceptable here and nowhere else.
+ */
+namespace {
+
+enum MeasureFamily {
+	MEASURE_UNIT,
+	MEASURE_AIRCRAFT,
+	MEASURE_BULLET,
+	MEASURE_PARTICLE,
+	MEASURE_COUNT
+};
+
+char const * const MeasureFamilyName[MEASURE_COUNT] = {"unit", "air", "bullet", "particle"};
+
+struct MeasureMaxima {
+	int PixelDelta[MEASURE_COUNT] = {};
+	int LeptonDelta[MEASURE_COUNT] = {};
+	int Samples[MEASURE_COUNT] = {};
+	int SpanLastMs = 0;
+	int SpanMinMs = 0;
+	int SpanMaxMs = 0;
+	int Ticks = 0;
+};
+
+MeasureMaxima MeasureSinceReport;
+std::unordered_map<ObjectClass const *, Coord> MeasurePrevious;
+unsigned long MeasureLastTickMs = 0;
+
+int Measure_Family(ObjectClass const * object)
+{
+	switch (object->Fetch_RTTI()) {
+		case RTTI_UNIT: return(MEASURE_UNIT);
+		case RTTI_AIRCRAFT: return(MEASURE_AIRCRAFT);
+		case RTTI_BULLET: return(MEASURE_BULLET);
+		case RTTI_PARTICLE: return(MEASURE_PARTICLE);
+		default: return(-1);
+	}
+}
+
+void Measure_Tick_Deltas(void)
+{
+	unsigned long now = timeGetTime();
+	if (MeasureLastTickMs != 0) {
+		int span = (int)(now - MeasureLastTickMs);
+		MeasureSinceReport.SpanLastMs = span;
+		if (MeasureSinceReport.Ticks == 0 || span < MeasureSinceReport.SpanMinMs) MeasureSinceReport.SpanMinMs = span;
+		if (span > MeasureSinceReport.SpanMaxMs) MeasureSinceReport.SpanMaxMs = span;
+	}
+	MeasureLastTickMs = now;
+	MeasureSinceReport.Ticks++;
+
+	std::unordered_map<ObjectClass const *, Coord> current;
+	for (int layer = LAYER_FIRST; layer < LAYER_COUNT; layer++) {
+		LayerClass const & list = DisplayClass::Layer[layer];
+		for (int index = 0; index < list.Count(); index++) {
+			ObjectClass const * object = list[index];
+			if (object == nullptr) continue;
+			Coord position = object->Position;
+			current.emplace(object, position);
+
+			int family = Measure_Family(object);
+			if (family < 0) continue;
+			auto previous = MeasurePrevious.find(object);
+			if (previous == MeasurePrevious.end()) continue;
+
+			auto delta = position - previous->second;
+			int lepton = std::max({std::abs(delta.X), std::abs(delta.Y), std::abs(delta.Z)});
+			int pixel = 0;
+			if (TacticalMap != nullptr) {
+				Point2D from = TacticalMap->Coord_To_Pixel_Absolute(previous->second);
+				Point2D to = TacticalMap->Coord_To_Pixel_Absolute(position);
+				pixel = std::max(std::abs(to.X - from.X), std::abs(to.Y - from.Y));
+			}
+			MeasureSinceReport.Samples[family]++;
+			if (lepton > MeasureSinceReport.LeptonDelta[family]) MeasureSinceReport.LeptonDelta[family] = lepton;
+			if (pixel > MeasureSinceReport.PixelDelta[family]) MeasureSinceReport.PixelDelta[family] = pixel;
+		}
+	}
+	MeasurePrevious.swap(current);
+}
+
+void Measure_Report(void)
+{
+	MeasureMaxima const & m = MeasureSinceReport;
+	DebugString("Measure: sim=%u/s render=%u/s ticks=%d span=%d ms (min %d max %d) frame=%d\n",
+		LastFramesPerSecond, LastRenderFramesPerSecond, m.Ticks, m.SpanLastMs, m.SpanMinMs, m.SpanMaxMs, (int)Frame);
+	for (int family = 0; family < MEASURE_COUNT; family++) {
+		DebugString("Measure:   %-8s samples=%-6d max px/tick=%-4d max lepton/tick=%d\n",
+			MeasureFamilyName[family], m.Samples[family], m.PixelDelta[family], m.LeptonDelta[family]);
+	}
+	MeasureSinceReport = MeasureMaxima();
+}
+
+}
 
 
 /// <summary>
@@ -338,6 +443,7 @@ bool Main_Loop(void)
 	**	AI logic operations are performed here.
 	*/
 	Logic.AI();
+	Measure_Tick_Deltas();
 
 	/*
 	**	Manage the inter-player message list.  If Manage() returns true, it means
@@ -639,6 +745,9 @@ void Sync_Delay(void)
 	if (!fps_timer) {
 		LastFramesPerSecond = FramesThisSecond;
 		FramesThisSecond = 0;
+		LastRenderFramesPerSecond = RenderFramesThisSecond;
+		RenderFramesThisSecond = 0;
+		Measure_Report();
 		TotalFrames += LastFramesPerSecond;
 		SecondsPassed++;
 		if (TotalFrames > 0x7FFFFFFF) {

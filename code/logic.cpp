@@ -89,6 +89,8 @@ unsigned FramesThisSecond=0;
 unsigned LastFramesPerSecond=0;
 unsigned TotalFrames=0;
 unsigned SecondsPassed=0;
+unsigned RenderFramesThisSecond=0;
+unsigned LastRenderFramesPerSecond=0;
 
 
 #ifdef _DEBUG
