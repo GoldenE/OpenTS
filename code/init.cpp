@@ -1096,11 +1096,11 @@ restart:
 		**	the menu loop.  Hide the now-useless mouse pointer.
 		*/
 		if (Session.Play && Session.RecordFile.Is_Available()) {
-			if (Session.RecordFile.Open(FileClass::READ)) {
-				Load_Recording_Values(Session.RecordFile);
+			if (Session.RecordFile.Open(FileClass::READ) && Load_Recording_Values(Session.RecordFile)) {
 				process = false;
 				Theme.Stop(true);
 			} else {
+				Session.RecordFile.Close();
 				Session.Play = false;
 			}
 		}
@@ -1480,11 +1480,11 @@ restart:
 						if (Session.Attract && Session.RecordFile.Is_Available()) {
 							Session.Play = true;
 
-							if (Session.RecordFile.Open(FileClass::READ)) {
-								Load_Recording_Values(Session.RecordFile);
+							if (Session.RecordFile.Open(FileClass::READ) && Load_Recording_Values(Session.RecordFile)) {
 								process = false;
 								Theme.Stop(true);
 							} else {
+								Session.RecordFile.Close();
 								Session.Play = false;
 								selection = SEL_NONE;
 							}
@@ -2992,6 +2992,14 @@ static void Init_Keys(void)
 }
 
 
+/*
+ * A recording opens with this tag so that a file written by a build whose header
+ * layout differs is refused rather than misread. Recordings are debugging artifacts
+ * and carry no compatibility promise beyond one development snapshot.
+ */
+static char const RecordingTag[8] = "OTSREC1";
+
+
 /***************************************************************************
  * Save_Recording_Values -- Saves multiplayer-specific values              *
  *                                                                         *
@@ -3017,8 +3025,9 @@ static void Init_Keys(void)
  *=========================================================================*/
 bool Save_Recording_Values(CCFileClass & file)
 {
-	//Session.Save(file);
 	DebugString("Saving recording values for scenario : %s\n", Scen->ScenarioName);
+	file.Write(RecordingTag, sizeof(RecordingTag));
+	file.Write(&Session.Type, sizeof(Session.Type));
 	file.Write(&BuildLevel, sizeof(BuildLevel));
 #if defined(_DEBUG)
 	file.Write(&Debug_Unshroud, sizeof(Debug_Unshroud));
@@ -3029,6 +3038,20 @@ bool Save_Recording_Values(CCFileClass & file)
 	file.Write(&Whom, sizeof(Whom));
 	file.Write(&Special, sizeof(SpecialClass));
 	file.Write(&Options, sizeof(OptionsClass));
+
+	/*
+	 * A skirmish assigns its houses from the player list and the game options, so
+	 * playback must have the same ones the recorded session was set up with.
+	 */
+	file.Write(&Session.Options, sizeof(Session.Options));
+	file.Write(Session.Handle, sizeof(Session.Handle));
+	file.Write(&Session.House, sizeof(Session.House));
+	file.Write(&Session.ColorIdx, sizeof(Session.ColorIdx));
+	int count = Session.Players.Count();
+	file.Write(&count, sizeof(count));
+	for (int index = 0; index < count; index++) {
+		file.Write(Session.Players[index], sizeof(NodeNameType));
+	}
 	return(true);
 }
 
@@ -3050,7 +3073,27 @@ bool Save_Recording_Values(CCFileClass & file)
  *=========================================================================*/
 bool Load_Recording_Values(CCFileClass & file)
 {
-	//Session.Load(file);
+	char tag[sizeof(RecordingTag)];
+	if (file.Read(tag, sizeof(tag)) != sizeof(tag) || memcmp(tag, RecordingTag, sizeof(tag)) != 0) {
+		DebugString("Recording file %s was not written by this build; not playing it back.\n", file.File_Name());
+		return(false);
+	}
+
+	file.Read(&Session.Type, sizeof(Session.Type));
+
+	/*
+	 * The menus that set up a session outside a campaign read the multiplayer settings
+	 * and the house overrides before the scenario starts, and the simulation depends
+	 * on both, so playback does the same before restoring the recorded session.
+	 */
+	if (Session.Type != GAME_NORMAL) {
+		Session.Read_MultiPlayer_Settings();
+		for (int house = 0; house < HouseTypes.Count(); house++) {
+			HouseTypes[house]->Read_INI(*RuleINI);
+		}
+	}
+	Session.Read_Sync_Bug_Settings();
+
 	file.Read(&BuildLevel, sizeof(BuildLevel));
 #if defined(_DEBUG)
 	file.Read(&Debug_Unshroud, sizeof(Debug_Unshroud));
@@ -3061,6 +3104,26 @@ bool Load_Recording_Values(CCFileClass & file)
 	file.Read(&Whom, sizeof(Whom));
 	file.Read(&Special, sizeof(SpecialClass));
 	file.Read(&Options, sizeof(OptionsClass));
+
+	file.Read(&Session.Options, sizeof(Session.Options));
+	file.Read(Session.Handle, sizeof(Session.Handle));
+	file.Read(&Session.House, sizeof(Session.House));
+	file.Read(&Session.ColorIdx, sizeof(Session.ColorIdx));
+	Session.PrefColor = Session.ColorIdx;
+
+	while (Session.Players.Count() > 0) {
+		NodeNameType * player = Session.Players[0];
+		Session.Players.Delete(player);
+		delete player;
+	}
+	int count = 0;
+	file.Read(&count, sizeof(count));
+	for (int index = 0; index < count; index++) {
+		NodeNameType * player = new NodeNameType;
+		file.Read(player, sizeof(NodeNameType));
+		Session.Players.Add(player);
+	}
+
 	DebugString("Loaded recording values for scenario : %s\n", Scen->ScenarioName);
 	return(true);
 }

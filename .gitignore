@@ -49,3 +49,6 @@ __pycache__/
 # Manual tooling temp snapshots (interrupted manage.py runs)
 manual/data/.manual-check-*/
 manual/data/.manual-generate-*/
+
+# Captured runtime baseline: recordings, sync dumps, saves, manifests (proprietary data)
+/baseline/

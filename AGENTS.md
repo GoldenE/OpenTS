@@ -13,6 +13,15 @@ For work under `manual/`, read and follow `manual/AGENTS.md`; it supplements
 these instructions and routes authoring and maintenance work to the owning
 manual guides.
 
+## Local game files
+
+A retail Tiberian Sun install is available on this machine at
+`C:\Program Files (x86)\Steam\steamapps\common\Command & Conquer Tiberian Sun`.
+Use it read-only, as evidence for data formats, asset layout, and runtime
+behavior, and as the source for the runtime files `Run/` expects. The path is a
+local convenience and not a project dependency: no repository file, build step,
+or automated check may require it, and nothing from it is ever committed.
+
 ## Project intent
 
 OpenTS gives equal weight to a maintained, playable engine and to a capable

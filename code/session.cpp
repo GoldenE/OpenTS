@@ -238,7 +238,7 @@ SessionClass::SessionClass(void)
 	TrapTarget.Invalidate();    // TARGET value of object to trap
 	TrapCell = NULL;            // for trapping a cell
 	TrapCheckHeap = 0;          // start checking the Heap
-	TrapPrintCRC = 0;           // output CRC file
+	TrapPrintCRC = 0x7fffffff;  // frame to print the CRC file at; never, unless asked
 }	// end of SessionClass
 
 
@@ -494,43 +494,56 @@ void SessionClass::Read_MultiPlayer_Settings(void)
 
 	// Read special recording playback values, to help find sync bugs
 	if (Session.Play) {
-		TrapFrame = ConfigINI.Get_Int("SyncBug", "Frame", 0x7fffffff);
-
-		ConfigINI.Get_String("SyncBug", "Type", "NONE", buf, 80);
-
-		if (!stricmp(buf,"AIRCRAFT"))
-			TrapObjType = RTTI_AIRCRAFT;
-		else if (!stricmp(buf,"ANIM"))
-			TrapObjType = RTTI_ANIM;
-		else if (!stricmp(buf,"BUILDING"))
-			TrapObjType = RTTI_BUILDING;
-		else if (!stricmp(buf,"BULLET"))
-			TrapObjType = RTTI_BULLET;
-		else if (!stricmp(buf,"INFANTRY"))
-			TrapObjType = RTTI_INFANTRY;
-		else if (!stricmp(buf,"UNIT"))
-			TrapObjType = RTTI_UNIT;
-		else {
-			TrapObjType = RTTI_NONE;
-		}
-
-		ConfigINI.Get_String("SyncBug", "Coord", "0", buf, 80);
-		int x;
-		int y;
-		int z;
-		sscanf(buf,"%d,%d,%d", &x, &y, &z);
-		int target = ConfigINI.Get_Int("SyncBug", "Target", -1);
-		TrapTarget.Decode(target);
-
-		ConfigINI.Get_String("SyncBug", "Cell", "0,0", buf, 80);
-		sscanf(buf, "%d,%d", &x, &y);
-		Cell cell(x, y);
-		if (cell != CELL_NONE) {
-			TrapCell = &(Map[cell]);
-		}
-
-		TrapPrintCRC = ConfigINI.Get_Int("SyncBug", "PrintCRC", 0x7fffffff);
+		Read_Sync_Bug_Settings();
 	}
+}
+
+
+/// <summary>
+/// Reads the sync bug trap settings from the [SyncBug] block of the configuration file.
+/// A recording played back from the command line never passes through the multiplayer
+/// settings, so this is read on its own there as well.
+/// </summary>
+void SessionClass::Read_Sync_Bug_Settings(void)
+{
+	char buf[128];
+
+	TrapFrame = ConfigINI.Get_Int("SyncBug", "Frame", 0x7fffffff);
+
+	ConfigINI.Get_String("SyncBug", "Type", "NONE", buf, 80);
+
+	if (!stricmp(buf,"AIRCRAFT"))
+		TrapObjType = RTTI_AIRCRAFT;
+	else if (!stricmp(buf,"ANIM"))
+		TrapObjType = RTTI_ANIM;
+	else if (!stricmp(buf,"BUILDING"))
+		TrapObjType = RTTI_BUILDING;
+	else if (!stricmp(buf,"BULLET"))
+		TrapObjType = RTTI_BULLET;
+	else if (!stricmp(buf,"INFANTRY"))
+		TrapObjType = RTTI_INFANTRY;
+	else if (!stricmp(buf,"UNIT"))
+		TrapObjType = RTTI_UNIT;
+	else {
+		TrapObjType = RTTI_NONE;
+	}
+
+	ConfigINI.Get_String("SyncBug", "Coord", "0", buf, 80);
+	int x;
+	int y;
+	int z;
+	sscanf(buf,"%d,%d,%d", &x, &y, &z);
+	int target = ConfigINI.Get_Int("SyncBug", "Target", -1);
+	TrapTarget.Decode(target);
+
+	ConfigINI.Get_String("SyncBug", "Cell", "0,0", buf, 80);
+	sscanf(buf, "%d,%d", &x, &y);
+	Cell cell(x, y);
+	if (cell != CELL_NONE) {
+		TrapCell = &(Map[cell]);
+	}
+
+	TrapPrintCRC = ConfigINI.Get_Int("SyncBug", "PrintCRC", 0x7fffffff);
 }
 
 

@@ -87,6 +87,12 @@ void Play_Movie(char const * name, ThemeType theme, bool clrscrn_after, bool str
 		return;
 	}
 
+	// A recording plays back unattended, and a movie stalls whenever the window
+	// loses focus, so playback skips them the way multiplayer does.
+	if (Session.Play) {
+		return;
+	}
+
 	Keyboard->Clear();
 
 	VQHandle * vqa = Movie_Create(name, HiddenSurface, Rect(0,0,0,0), Rect(0,0,0,0), int(Options.SoundVolume * 255.0), 1);
