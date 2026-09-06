@@ -450,6 +450,12 @@ Coord AnimClass::Center_Coord(void) const
 }
 
 
+Coord AnimClass::Fetch_Render_Offset(void) const
+{
+	return(xObject != nullptr ? xObject->Fetch_Render_Offset() : BASECLASS::Fetch_Render_Offset());
+}
+
+
 /***********************************************************************************************
  * AnimClass::Render -- Draws an animation object.                                             *
  *                                                                                             *
@@ -1030,6 +1036,7 @@ void AnimClass::Attach_To(ObjectClass * obj)
 		xObject = NULL;
 
 		PositionCoord = center;
+		Invalidate_Render_Interpolation();
 
 		if (down) {
 			Map.Submit(this);
@@ -1044,6 +1051,7 @@ void AnimClass::Attach_To(ObjectClass * obj)
 	obj->IsAnimAttached = true;
 	xObject = obj;
 	PositionCoord = center - obj->Center_Coord();
+	Invalidate_Render_Interpolation();
 	Map.Submit(this);
 }
 

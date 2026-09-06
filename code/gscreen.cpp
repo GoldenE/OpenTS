@@ -58,7 +58,9 @@
 #include "cctooltip.h"
 #include "gadget.h"
 #include "goptions.h"
+#include "interp.h"
 #include "keyboard.h"
+#include "logic.h"
 #include "savestream.h"
 #include "session.h"
 #include "surface.h"
@@ -383,7 +385,10 @@ void GScreenClass::Remove_A_Button(GadgetClass & gadget)
  *=============================================================================================*/
 void GScreenClass::Render(void)
 {
+	Render_Frame_Begin();
 	BStart(BENCH_GSCREEN_RENDER);
+
+	RenderFramesThisSecond++;
 
 	Surface * oldpage = LogicalSurface;
 	LogicalSurface = CompositeSurface;

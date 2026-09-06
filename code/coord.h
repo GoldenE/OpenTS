@@ -43,7 +43,6 @@ class Cell : public TPoint2D<short>
 		Cell(int x, int y) : BASECLASS(x, y) {}
 		explicit Cell(TPoint2D<int> const & pt) : BASECLASS(pt.X, pt.Y) {}
 		Cell(BASECLASS const & pt) : BASECLASS(pt) {};
-		explicit Cell(int cellnum) : BASECLASS(cellnum % 128, cellnum / 128) {}
 
 		Coord As_Coord(int z = 0) const;
 

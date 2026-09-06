@@ -85,10 +85,7 @@ PNG through `PrintWindow` without bringing it to the front, and drives it:
 clicks at logical game pixels, key presses, dialog buttons by caption, and
 dialog trackbars by control id. Import it and read `Get-Help Start-OpenTS`.
 
-Two engine behaviors bound what it can do unattended. Menu and tactical hit
-tests read the system cursor, so a click moves the real mouse. Movies and the
-skirmish dialog pause until the window has focus. Replaying a recording needs
-neither, which is why the replay driver runs minimized; recording one does.
+Menu and tactical hit tests read the system cursor, so a click moves the real mouse. Focus-loss handling also waits for focus during both campaign and skirmish playback, and restoring focus can recapture the mouse. Run recording and replay sessions only when the desktop is available; a minimized launch is not a guarantee of background-safe execution.
 
 ## Play-through checklist
 
@@ -137,3 +134,4 @@ exist without.
   `recording-playback-session` documents the fix.
 - The game window pauses movies and the skirmish dialog whenever it loses
   focus, so a launched game that is not in front stalls at its intro movie.
+- `Check_For_Focus_Loss` in `code/mainloop.cpp` waits while unfocused for both `GAME_NORMAL` and `GAME_SKIRMISH`; `Focus_Restore` in `code/winstub.cpp` recaptures a previously captured mouse. Historical completed skirmish replays do not establish safe execution during other desktop use.

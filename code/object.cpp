@@ -98,6 +98,8 @@
 #include "always.h"
 
 #include "object.h"
+#include "interp.h"
+#include "renderposition.hh"
 
 #include "_logic.h"
 #include "_map.h"
@@ -172,7 +174,8 @@ ObjectClass::ObjectClass(void) :
 	Next(NULL),
 	Tag(NULL),
 	Strength(255),
-	Position(COORD_NONE)
+	Position(COORD_NONE),
+	RenderPrevious(Position)
 {
 	Objects.Add(this);
 	ObjectPtrTracker.Add(this);
@@ -1189,7 +1192,7 @@ bool ObjectClass::Render(Rect & cliprect, bool forced, bool extras_only) const
 	if (Debug_Map || !MainWindow || (forced || IsToDisplay) && !IsInLimbo) {
 		IsToDisplay = false;
 
-		if (TacticalMap->Coord_To_Pixel(Render_Coord(), point) || RTTI == RTTI_PARTICLESYSTEM) {
+		if (TacticalMap->Coord_To_Pixel(Render_Coord() + Fetch_Render_Offset(), point) || RTTI == RTTI_PARTICLESYSTEM) {
 
 			cliprect = Intersect(cliprect, TacticalRect);
 
@@ -1391,6 +1394,7 @@ bool ObjectClass::Unlimbo(Coord const & coord, Dir256 )
 				ucoord = objclass->Coord_Fixup(coord);
 			}
 			PositionCoord = ucoord;
+			Invalidate_Render_Interpolation();
 
 			if (Mark(MARK_DOWN)) {
 				if (IsActive) {
@@ -2068,6 +2072,8 @@ void ObjectClass::Serialize(SaveStreamClass & stream)
 	stream.Serialize(Layer);
 	stream.Serialize(IsSubmittedToLayer);
 	stream.Serialize(Position);
+	// RenderPrevious is presentation-only: restore it locally, never serialize it.
+	if (stream.Is_Loading()) Invalidate_Render_Interpolation();
 }
 
 
@@ -2245,6 +2251,7 @@ bool ObjectClass::operator > (ObjectClass const & object) const
 /// <param name="crc">The engine to submit this object's state to.</param>
 void ObjectClass::Compute_CRC(CRCEngine & crc) const
 {
+	// RenderPrevious is deliberately excluded from the simulation checksum.
 	BASECLASS::Compute_CRC(crc);
 
 	if (Next != NULL) {
@@ -2560,6 +2567,18 @@ void ObjectClass::Set_Coord(Coord const & coord)
 	assert(this != NULL);
 
 	Position = coord;
+}
+
+
+void ObjectClass::Invalidate_Render_Interpolation(void)
+{
+	RenderPrevious = Position;
+}
+
+
+Coord ObjectClass::Fetch_Render_Offset(void) const
+{
+	return(Render_Position_Offset(Position, RenderPrevious, Fetch_Render_Alpha()));
 }
 
 

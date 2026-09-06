@@ -198,6 +198,7 @@ class ObjectClass : public AbstractClass
 		**	point. For buildings, it is the upper left corner.
 		*/
 		Coord Position;
+		Coord RenderPrevious;
 
 		/*-----------------------------------------------------------------------------------
 		**	Constructor & destructors.
@@ -242,6 +243,8 @@ class ObjectClass : public AbstractClass
 		virtual Coord Docking_Coord(void) const {return(Center_Coord());}
 		virtual Coord Center_Coord(void) const override;
 		virtual Coord Render_Coord(void) const {return(Center_Coord());}
+		virtual Coord Fetch_Render_Offset(void) const;
+		void Invalidate_Render_Interpolation(void);
 		virtual Coord Fire_Coord(int which) const {return(Center_Coord() + Coord(0, 0, 50));}
 		virtual Coord Exit_Coord(void) const {return(Center_Coord());}
 		virtual int Sort_Y(void) const;

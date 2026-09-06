@@ -446,7 +446,7 @@ CellClass & MapClass::operator[](Coord const & coord) const
 	int x = coord.X / CELL_LEPTON_W;
 	int y = coord.Y / CELL_LEPTON_H;
 
-	int cellnum = x + y * MAP_CELL_H;
+	int cellnum = x + y * MAP_CELL_W;
 
 	if (cellnum >= 0 && cellnum < Array.Length() && Array[cellnum] != NULL) {
 		return(*Array[cellnum]);
@@ -466,7 +466,7 @@ CellClass & MapClass::operator[](Coord const & coord) const
 /// <returns>Returns with a reference to the cell at that location.</returns>
 CellClass & MapClass::operator[](Cell const & cell) const
 {
-	int cellnum = cell.X + cell.Y * MAP_CELL_H;
+	int cellnum = cell.X + cell.Y * MAP_CELL_W;
 
 	if (cellnum >= 0 && cellnum < MAP_CELL_TOTAL && Array[cellnum] != NULL) {
 		return(*Array[cellnum]);
@@ -487,7 +487,7 @@ CellClass & MapClass::operator[](Cell const & cell) const
 /// <remarks>The location is not range checked. It must lie within the cell array.</remarks>
 bool MapClass::Is_Valid(Cell const & cell)
 {
-	int cellnum = cell.X + cell.Y * MAP_CELL_H;
+	int cellnum = cell.X + cell.Y * MAP_CELL_W;
 
 	if (Array[cellnum] != NULL) {
 		return(true);
@@ -682,12 +682,11 @@ void MapClass::Free_Cells(void)
 void MapClass::Init_Cells(void)
 {
 	TotalValue = 0;
-	for (int y = 0; y < MAP_CELL_H; y++) {
-		for (int x = 0; x < MAP_CELL_W; x++) {
-			int cellnum = x + y * MAP_CELL_H;
-			if (cellnum < Array.Length() && Array[cellnum] != NULL) {
-				new (Array[cellnum]) CellClass;
-			}
+	// Reset every allocated slot, including cells retained outside a resized playfield.
+	int const end = std::min(MAP_CELL_TOTAL, Array.Length());
+	for (int cellnum = 0; cellnum < end; cellnum++) {
+		if (Array[cellnum] != nullptr) {
+			new (Array[cellnum]) CellClass;
 		}
 	}
 }
@@ -729,7 +728,7 @@ void MapClass::Set_Map_Dimensions(Rect const & rect, bool reset_cells, int cell_
 	}
 
 	for (i = 0; i < Array.Length(); i++) {
-		if (!In_Radar(Cell(i % MAP_CELL_W, i / MAP_CELL_H))) {
+		if (!In_Radar(Cell(i % MAP_CELL_W, i / MAP_CELL_W))) {
 			CellClass *c = Array[i];
 			if (c != NULL) {
 				c->Height = cell_height;
@@ -776,7 +775,7 @@ void MapClass::Set_Map_Dimensions(Rect const & rect, bool reset_cells, int cell_
 		for (int x = 0; x < MapRect.Width + 2; x++) {
 			Cell cell(x, y);
 			if (In_Radar(cell)) {
-				int idx = (MAP_CELL_H * y) + x;
+				int idx = (MAP_CELL_W * y) + x;
 				CellClass *c = Array[idx];
 				if (c == NULL) {
 					CellClass *cc = new CellClass;
@@ -892,7 +891,7 @@ void MapClass::Set_Map_Dimensions(Rect const & rect, bool reset_cells, int cell_
 			CellClass *c1 = Array[i];
 			CellClass **c2 = &Array[i];
 			if (c1 != NULL) {
-				if (!In_Radar(Cell(i % MAP_CELL_W, i / MAP_CELL_H))) {
+				if (!In_Radar(Cell(i % MAP_CELL_W, i / MAP_CELL_W))) {
 					*c2 = NULL;
 					delete c1;
 				}
@@ -2208,12 +2207,13 @@ int MapClass::Write_Binary_5(Pipe & pipe)
  *=============================================================================================*/
 bool MapClass::Read_Binary_1(Straw & straw)
 {
+	static constexpr int LEGACY_TERRAIN_CELL_COUNT = 128 * 128;
 	LCWStraw decomp(LCWStraw::DECOMPRESS);
 	decomp.Get_From(&straw);
 
 	int i;
 
-	for (i = 0; i < MAP_CELL_TOTAL/16; i++) {
+	for (i = 0; i < LEGACY_TERRAIN_CELL_COUNT; i++) {
 		CellClass * cellptr = &(*this)[Cell(i % 128, i / 128)];
 		if (cellptr != NULL) {
 			cellptr->ITType = ISOTILE_NONE;
@@ -2224,7 +2224,7 @@ bool MapClass::Read_Binary_1(Straw & straw)
 		}
 	}
 
-	for (i = 0; i < MAP_CELL_TOTAL/16; i++) {
+	for (i = 0; i < LEGACY_TERRAIN_CELL_COUNT; i++) {
 		CellClass * cellptr = &(*this)[Cell(i % 128, i / 128)];
 		if (cellptr != NULL) {
 			decomp.Get(&cellptr->SubTile, sizeof(cellptr->SubTile));
@@ -2233,7 +2233,7 @@ bool MapClass::Read_Binary_1(Straw & straw)
 		}
 	}
 
-	for (i = 0; i < MAP_CELL_TOTAL/16; i++) {
+	for (i = 0; i < LEGACY_TERRAIN_CELL_COUNT; i++) {
 		CellClass * cellptr = &(*this)[Cell(i % 128, i / 128)];
 		if (cellptr != NULL) {
 			decomp.Get(&cellptr->Height, sizeof(cellptr->Height));
@@ -6540,6 +6540,7 @@ int MapClass::Get_Height_GL(Coord const & coord)
 /// returned.</returns>
 CellClass * MapClass::Iterate(void)
 {
+	if (IterCell == nullptr) return(nullptr);
 	/*
 	 * Save the current iterator cell to return later.
 	 */
@@ -6582,7 +6583,8 @@ CellClass * MapClass::Iterate(void)
 	/*
 	 * Advance the iterated cell pointer.
 	 */
-	IterCell = &Array[IterX + (IterY * MAP_CELL_H)];
+	unsigned const next = IterX + IterY * MAP_CELL_W;
+	IterCell = next < static_cast<unsigned>(Array.Length()) ? &Array[next] : nullptr;
 
 	return(*iter);
 }
@@ -6597,7 +6599,7 @@ void MapClass::Reset_Iterator(void)
 	IterX = 1;
 	IterY = PlayRect.Width;
 	IterColumn = PlayRect.Width - 1;
-	IterCell = &Array[IterX + (IterY * MAP_CELL_H)];
+	IterCell = &Array[IterX + (IterY * MAP_CELL_W)];
 }
 
 
@@ -8695,7 +8697,7 @@ int MapClass::Get_Water_Mask(CellClass * cellptr, int control)
 		return(data.WaterMask);
 	}
 
-	CellClass ** cptr = &Array[x + y * MAP_CELL_H - MAP_CELL_W - 1];
+	CellClass ** cptr = &Array[x + y * MAP_CELL_W - MAP_CELL_W - 1];
 
 	CellClass * tptr = cptr[0];
 	if (tptr && tptr->Is_Tile_Water()) {

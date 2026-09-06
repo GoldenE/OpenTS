@@ -164,6 +164,7 @@ class OptionsClass {
 		 * Presents are already limited to the refresh rate without it.
 		 */
 		bool VSync;
+		bool SmoothMotion;
 
 		/*
 		 * This is the graphics interface the renderer is asked for, as one of the

@@ -118,6 +118,28 @@ Git is not required. A build with no Git available, or from a source archive
 with no repository, succeeds and reports the commit as `unknown` and the version
 without one.
 
+## Asset-independent clock checks
+
+The `RenderClockTest` target exercises render-clock startup, fixed-point progression, cadence changes, disabled interpolation, rejected stalls, millisecond-counter wraparound, and three-axis render-offset arithmetic without launching the engine or loading game assets. It also checks relocation thresholds, large-coordinate arithmetic, and the options layout used by the recording format. Run its `renderclock` CTest entry in either supported configuration:
+
+```powershell
+cmake --build build --config Debug --target RenderClockTest
+ctest --test-dir build -C Debug -R '^renderclock$' --output-on-failure
+```
+
+Use `Release` in both commands for the optimized configuration. These checks establish clock arithmetic and layout, not visual behavior or replay compatibility; those still need the [runtime checks](TESTING.md).
+
+## Asset-independent map checks
+
+`MapContractsTest` compiles production map and preview function bodies with small cell, decoded-stream, surface, and redraw substitutes. CMake extracts these bodies at configuration and reconfigures when their source files change. Tests compare shroud visitation order and flags against a full-grid oracle, walk the diamond iterator through its final cell at the table ceiling, check initialization of retained cells and short tables, and verify the legacy reader's 65,536-byte decoded payload and 128-column coordinates. Preview checks reject missing packs and nonpositive dimensions and exercise the zero-size drawing guard. The target also rejects integer construction of `Cell` and verifies its four-byte layout.
+
+```powershell
+cmake --build build --config Debug --target MapContractsTest
+ctest --test-dir build -C Debug -R '^mapcontracts$' --output-on-failure
+```
+
+Use `Release` for optimized checks. The stream substitute supplies already decoded bytes, and the redraw substitutes record calls; these tests do not establish codec behavior, full-engine shroud effects, save compatibility, editor acceptance, or runtime performance. Use the complete CTest suite with `ctest --test-dir build -C <Debug|Release> --output-on-failure` after building all targets.
+
 ## Continuous integration
 
 The `Engine` workflow builds every pull request and every push to `main` that

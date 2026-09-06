@@ -29,6 +29,7 @@
 #include "command.h"
 #include "conquer.h"
 #include "data.h"
+#include "dbgprint.h"
 #include "debug.h"
 #include "dialog.h"
 #include "dsaudio.h"
@@ -36,7 +37,10 @@
 #include "fog.h"
 #include "globals.h"
 #include "goptions.h"
+#include "infantry.h"
+#include "infatype.h"
 #include "internet.h"
+#include "interp.h"
 #include "ipxmgr.h"
 #include "language\language.h"
 #include "logic.h"
@@ -46,6 +50,7 @@
 #include "msgloop.h"
 #include "mstimer.h"
 #include "netdlg.h"
+#include "objtype.h"
 #include "pcx.h"
 #include "queue.h"
 #include "rules.h"
@@ -63,9 +68,13 @@
 #include "wonline.h"
 
 #include "bench.hh"
+#include "renderposition.hh"
 #include "special.hh"
 
 #include <algorithm>
+#include <cstdlib>
+#include <string>
+#include <unordered_map>
 
 //
 // Special module globals for recording and playback
@@ -77,6 +86,146 @@ void Message_Input(KeyNumType &input);
 void Sync_Delay(void);
 void Multiplayer_Debug_Print(bool noframecheck);
 static void Do_Record_Playback(void);
+
+
+/*
+ * Disposable measurement for plans/fps-fix.md Phase 0. Once per simulation tick it
+ * records, per object family, the largest displacement any object made during that
+ * tick, in projected screen pixels and in leptons, and the once-per-second report
+ * below writes the maxima to the debug log. Keyed by object address, so a reused
+ * heap slot can pair a stale entry with a new object; that skews one log line and
+ * draws nothing, which is acceptable here and nowhere else.
+ */
+namespace {
+
+enum MeasureFamily {
+	MEASURE_UNIT,
+	MEASURE_AIRCRAFT,
+	MEASURE_BULLET,
+	MEASURE_PARTICLE,
+	MEASURE_JUMPJET,
+	MEASURE_DEBRIS,
+	MEASURE_OTHER,
+	MEASURE_COUNT
+};
+
+char const * const MeasureFamilyName[MEASURE_COUNT] = {"unit", "air", "bullet", "particle", "jumpjet", "debris", "other"};
+
+struct MeasureMaxima {
+	int PixelDelta[MEASURE_COUNT] = {};
+	int LeptonDelta[MEASURE_COUNT] = {};
+	int Samples[MEASURE_COUNT] = {};
+	std::int64_t PreSnapDelta[MEASURE_COUNT] = {};
+	int ThresholdSnaps[MEASURE_COUNT] = {};
+	std::string PixelType[MEASURE_COUNT];
+	std::string LeptonType[MEASURE_COUNT];
+	int UnitVeterancy = 0;
+	bool UnitFaster = false;
+	int SpanLastMs = 0;
+	int SpanMinMs = 0;
+	int SpanMaxMs = 0;
+	int Ticks = 0;
+};
+
+MeasureMaxima MeasureSinceReport;
+std::unordered_map<ObjectClass const *, Coord> MeasurePrevious;
+unsigned long MeasureLastTickMs = 0;
+
+int Measure_Family(ObjectClass const * object)
+{
+	switch (object->Fetch_RTTI()) {
+		case RTTI_UNIT: return(MEASURE_UNIT);
+		case RTTI_AIRCRAFT: return(MEASURE_AIRCRAFT);
+		case RTTI_BULLET: return(MEASURE_BULLET);
+		case RTTI_PARTICLE: return(MEASURE_PARTICLE);
+		case RTTI_VOXELANIM: return(MEASURE_DEBRIS);
+		case RTTI_INFANTRY: {
+			InfantryClass const * infantry = static_cast<InfantryClass const *>(object);
+			return(infantry->Class != nullptr && infantry->Class->IsJumpJet ? MEASURE_JUMPJET : MEASURE_OTHER);
+		}
+		default: return(MEASURE_OTHER);
+	}
+}
+
+void Measure_Tick_Deltas(void)
+{
+	unsigned long now = timeGetTime();
+	if (MeasureLastTickMs != 0) {
+		int span = (int)(now - MeasureLastTickMs);
+		MeasureSinceReport.SpanLastMs = span;
+		if (MeasureSinceReport.Ticks == 0 || span < MeasureSinceReport.SpanMinMs) MeasureSinceReport.SpanMinMs = span;
+		if (span > MeasureSinceReport.SpanMaxMs) MeasureSinceReport.SpanMaxMs = span;
+	}
+	MeasureLastTickMs = now;
+	MeasureSinceReport.Ticks++;
+
+	std::unordered_map<ObjectClass const *, Coord> current;
+	for (int layer = LAYER_FIRST; layer < LAYER_COUNT; layer++) {
+		LayerClass const & list = DisplayClass::Layer[layer];
+		for (int index = 0; index < list.Count(); index++) {
+			ObjectClass const * object = list[index];
+			if (object == nullptr) continue;
+			Coord position = object->Position;
+			current.emplace(object, position);
+
+			int family = Measure_Family(object);
+			if (family < 0) continue;
+			std::int64_t presnap = Render_Position_Delta(position, object->RenderPrevious);
+			MeasureSinceReport.PreSnapDelta[family] = std::max(MeasureSinceReport.PreSnapDelta[family], presnap);
+			if (presnap > RENDER_INTERP_SNAP_LEPTONS) MeasureSinceReport.ThresholdSnaps[family]++;
+			auto previous = MeasurePrevious.find(object);
+			if (previous == MeasurePrevious.end()) continue;
+
+			auto delta = position - previous->second;
+			int lepton = std::max({std::abs(delta.X), std::abs(delta.Y), std::abs(delta.Z)});
+			int pixel = 0;
+			if (TacticalMap != nullptr) {
+				Point2D from = TacticalMap->Coord_To_Pixel_Absolute(previous->second);
+				Point2D to = TacticalMap->Coord_To_Pixel_Absolute(position);
+				pixel = std::max(std::abs(to.X - from.X), std::abs(to.Y - from.Y));
+			}
+			MeasureSinceReport.Samples[family]++;
+			ObjectTypeClass const * type = object->Class_Of();
+			char const * name = type != nullptr ? static_cast<char const *>(type->IniName) : "unknown";
+			if (presnap > RENDER_INTERP_SNAP_LEPTONS) {
+				DebugString("InterpSnap: frame=%d rtti=%d type=%s delta=%lld pos=%d,%d,%d previous=%d,%d,%d\n",
+					static_cast<int>(Frame), static_cast<int>(object->RTTI), name, presnap, position.X, position.Y, position.Z,
+					object->RenderPrevious.X, object->RenderPrevious.Y, object->RenderPrevious.Z);
+			}
+			if (lepton > MeasureSinceReport.LeptonDelta[family]) {
+				MeasureSinceReport.LeptonDelta[family] = lepton;
+				MeasureSinceReport.LeptonType[family] = name;
+				if (family == MEASURE_UNIT) {
+					FootClass const * foot = static_cast<FootClass const *>(object);
+					MeasureSinceReport.UnitVeterancy = foot->Veterancy.To_Integer();
+					MeasureSinceReport.UnitFaster = foot->Has_Ability(ABILITY_FASTER);
+				}
+			}
+			if (pixel > MeasureSinceReport.PixelDelta[family]) {
+				MeasureSinceReport.PixelDelta[family] = pixel;
+				MeasureSinceReport.PixelType[family] = name;
+			}
+		}
+	}
+	MeasurePrevious.swap(current);
+}
+
+void Measure_Report(void)
+{
+	MeasureMaxima const & m = MeasureSinceReport;
+	DebugString("Measure: sim=%u/s render=%u/s ticks=%d span=%d ms (min %d max %d) frame=%d\n",
+		LastFramesPerSecond, LastRenderFramesPerSecond, m.Ticks, m.SpanLastMs, m.SpanMinMs, m.SpanMaxMs, (int)Frame);
+	for (int family = 0; family < MEASURE_COUNT; family++) {
+		DebugString("Measure:   %-8s samples=%-6d max px/tick=%-4d max lepton/tick=%d px-type=%s lepton-type=%s\n",
+			MeasureFamilyName[family], m.Samples[family], m.PixelDelta[family], m.LeptonDelta[family], m.PixelType[family].c_str(), m.LeptonType[family].c_str());
+		DebugString("Measure:   %-8s pre-snap-leptons=%lld threshold-snaps=%d\n", MeasureFamilyName[family], m.PreSnapDelta[family], m.ThresholdSnaps[family]);
+	}
+	DebugString("Measure:   unit-max veterancy=%d faster=%d veteran-speed-bonus=%.3f\n", m.UnitVeterancy, m.UnitFaster, Rule->VeteranSpeed);
+	MeasureSinceReport = MeasureMaxima();
+	Report_Render_Offsets();
+}
+
+}
 
 
 /// <summary>
@@ -337,7 +486,10 @@ bool Main_Loop(void)
 	/*
 	**	AI logic operations are performed here.
 	*/
+	Sim_Tick_Advance();
 	Logic.AI();
+	Measure_Tick_Deltas();
+	Sim_Tick_End();
 
 	/*
 	**	Manage the inter-player message list.  If Manage() returns true, it means
@@ -639,6 +791,9 @@ void Sync_Delay(void)
 	if (!fps_timer) {
 		LastFramesPerSecond = FramesThisSecond;
 		FramesThisSecond = 0;
+		LastRenderFramesPerSecond = RenderFramesThisSecond;
+		RenderFramesThisSecond = 0;
+		Measure_Report();
 		TotalFrames += LastFramesPerSecond;
 		SecondsPassed++;
 		if (TotalFrames > 0x7FFFFFFF) {

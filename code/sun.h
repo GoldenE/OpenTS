@@ -81,6 +81,8 @@
 #define	MAP_CELL_H				512
 #define	MAP_CELL_TOTAL			(MAP_CELL_W*MAP_CELL_H)
 
+static_assert(MAP_CELL_W == MAP_CELL_H, "The cell store requires equal dimensions; MAP_CELL_W is its row stride");
+
 #define	REFRESH_EOL				Cell(32767, 32767)	// This number ends a refresh/occupy offset list.
 
 #define CELL_PIXEL_W			24

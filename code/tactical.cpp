@@ -2750,7 +2750,7 @@ void Tactical::Draw_Objects(bool forced)
 				}
 
 				Point2D pixel;
-				if (TacticalMap->Coord_To_Pixel(obj->Center_Coord(), pixel)) {
+				if (TacticalMap->Coord_To_Pixel(obj->Center_Coord() + obj->Fetch_Render_Offset(), pixel)) {
 					obj->Draw_Pre_Render(pixel, TacticalRect);
 					obj->Render(TacticalRect, forced, false);
 					obj->Draw_Post_Render(pixel, TacticalRect);
