@@ -88,6 +88,7 @@ class AnimClass : public ObjectClass, public StageClass
 		virtual bool Mark(MarkType mark=MARK_CHANGE) override;
 		virtual bool Render(Rect & rect, bool forced, bool extras_only = false) const override;
 		virtual Coord Center_Coord(void) const override;
+		virtual Coord Fetch_Render_Offset(void) const override;
 		virtual int Sort_Y(void) const override;
 		virtual LayerType In_Which_Layer(void) const override;
 		virtual ObjectTypeClass const * Class_Of(void) const override;

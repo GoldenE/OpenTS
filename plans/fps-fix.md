@@ -1,5 +1,21 @@
 # Sub-tick render interpolation for OpenTS
 
+## Goal and current implementation
+
+Draw intermediate object positions between simulation ticks without changing simulation pace or saved and synchronized coordinates. Phases 0–3 are implemented and now validated together with map-size Phases 1–3 to the extent available on this machine. Final builds, tests, goldens with both toggle values, targeted ramp/bridge/cliff checks, and the 256×256 path/save-load checks pass. Two-client LAN remains unverified because the user confirmed no second client is available. Cadence jitter remains a documented limitation. Phases 4–5 have not started.
+
+## Current cross-plan milestone tracker
+
+- [x] Audit Phases 1–3 and preserve the working FPS implementation, explicit resets, and measurement instrumentation.
+- [x] Add a regression demonstrating that correct measured-span arithmetic can still produce uneven wall-clock motion.
+- [x] Combine map-size Phases 2–3 with this checkout and pass supported builds, all CTest entries, and the complete manual gate.
+- [x] Run combined-build golden replays and targeted ramp/bridge/cliff occlusion checks with smoothing enabled and disabled during the authorized desktop session.
+- [ ] Complete a two-client LAN run beyond 2000 frames; a second compatible client is required.
+- [x] Close map-size Phase 1's live measurement gate; preserve the separate unavailable LAN acceptance gate.
+- [x] Include this milestone in the user-authorized combined close-out commit on `engine/smooth-motion-map-fixes`; LAN acceptance remains deferred.
+
+Dated execution records below describe their original builds. The September 5 combined audit owns validation status; older replay and visual passes are not combined-build evidence. The [handoff](handoff-2026-09-04.md#resume-boundary-and-next-milestone) owns the subsequent branch close-out and explicit LAN deferral; historical uncommitted-state statements below describe those earlier sessions.
+
 ## Context
 
 OpenTS already composites the tactical view hundreds of times a second and presents at
@@ -36,28 +52,18 @@ gives:
 | X | `256 / 24` ≈ **10.7** |
 | Y | `256 / 12` ≈ **21.3** |
 
-Ground vehicles move only a few leptons per tick — `DriveLocomotionClass` spends
-accumulated speed in units of 7 leptons, which `code/drive.cpp:1326` documents as
-`CELL_LEPTON / ((CELL_PIXEL_W + CELL_PIXEL_H) / 2)`, i.e. **7 leptons ≈ 1 average screen
-pixel**. A vehicle therefore moves roughly **0.5–1.5 pixels per simulation tick**.
+The drive locomotor spends accumulated speed in 7-lepton chunks (`code/drive.cpp:1326`), but that chunk is not a bound on a vehicle's total movement during a tick. September 5 Release calibration measured a slow Mammoth tank at up to 2 pixels per tick, a stock rookie buggy at 4, and a buggy with an explicitly enabled veteran speed ability at 5. The earlier 0.5–1.5 pixel estimate therefore understated the opportunity for faster ground vehicles. The Phase 0 results below own the measurements and their limitations.
 
 The composite surface is integer-pixel and shapes blit at integer positions, so:
 
-- **Ordinary ground units will look close to unchanged.** Their sub-tick offsets round
-  to zero pixels on most frames. Interpolation still buys a little: the drive locomotor
-  spends `SpeedAccum` in whole 7-lepton chunks (`code/drive.cpp:1326`), so per-tick
-  travel jitters between chunk counts, and interpolation converts that jitter into
-  uniformly timed pixel steps. The 1-pixel quantisation itself is a hard ceiling of the
-  2D integer-pixel renderer, not a weakness of the technique; the genuine fix is more
-  physical pixels per lepton — see *Relationship to the HD image-upgrades plan*.
+- **Slow ground units have limited room to improve; faster vehicles have more.** Interpolation can distribute the measured 2–5 pixel steps over a tick, while integer-pixel quantisation still limits the number of distinct positions. More physical pixels per lepton remain the route to finer movement — see *Relationship to the HD image-upgrades plan*.
 - **Aircraft, projectiles, jumpjets, drop pods and tunnel movers will be visibly
   smoother.** These move many leptons per tick and will gain several distinct sub-tick
   positions per tick.
 - **Most particles come along for free.** `ParticleClass` derives from `ObjectClass` and
   is submitted to the display layers (`code/particle.h:25,41`), and its artwork branch
   draws at the pixel handed down from the Phase 3 funnel (`code/particle.cpp:662-682`),
-  so drifting smoke, gas, fire and debris interpolate without extra work. Only the spark
-  and railgun branch plots its own pixel — see Phase 4.
+  so drifting smoke, gas and fire use that funnel. Sparks and railgun particles plot their own pixels, and flying voxel wreckage is a separate `VoxelAnimClass` family; those dependent draw paths are handled in Phase 4.
 - **Sprite animation stepping is not addressed here.** Walk cycles, explosions, muzzle
   flashes and building animations advance by whole artwork frames on the simulation tick.
   They are discrete artwork and cannot be interpolated without more frames; the delivery
@@ -165,8 +171,7 @@ and sweep built here.
    the per-frame network CRC (`code/queue.cpp:4281`) and serialized. New render-side code
    uses `Sim_Random_Pick`/`Sim_Percent_Chance` or no RNG at all.
    `manual/changes/anim-loop-delay-sync.md` records a real desync of exactly this shape.
-3. **No automated coverage exists.** `tests/` holds only a debug-logger stress test
-   (`tests/logstress/`). Every phase is verified by building and playing.
+3. **Automated coverage has explicit limits.** Clock/offset and map-contract tests supplement the logger test. They do not replace rendered, replay, lifecycle, or LAN evidence.
 
 ---
 
@@ -293,13 +298,7 @@ asymmetric, and Phase 3 must respect it. `Height` is a property over `Position.Z
 `Coord_To_Pixel` already subtracts `Z_Lepton_To_Pixel(coord.Z)`
 (`code/tactical.cpp:308-311` via `code/tactical.cpp:207-214`). A voxel aircraft body
 draws at the funnel pixel directly (`code/aircraft.cpp:478`), so its altitude
-interpolates correctly through the Phase 3 offset with no further work. The SHP path in
-`TechnoClass::Techno_Draw_Object` additionally shifts `drawpoint.Y` by
-`Z_Lepton_To_Pixel(Height)` for `RTTI_AIRCRAFT` (`code/techno.cpp:5951-5953`) — a
-second subtraction from the same `Position.Z` on top of the funnel's. Which subtraction
-carries the visible lift for an SHP-drawn aircraft is not established here; Phase 3
-establishes it in a live game and routes the interpolated Z through exactly one of
-them, zeroing the pixel contribution of `offset.Z` on the other.
+interpolates correctly through the Phase 3 offset with no further work. The inherited `RTTI_AIRCRAFT` SHP branch in `TechnoClass::Techno_Draw_Object` contains another height subtraction, but the Phase 3 caller audit found no aircraft route to it. `AircraftClass::Draw_It` draws only its voxel body and then calls the empty `FootClass::Draw_It`; its rotor drawing is also disabled. Therefore this phase leaves that unused branch unchanged. Enabling SHP aircraft is separate engine work and must resolve its altitude convention then.
 
 ### D4 — Attached animations must resolve through their host
 
@@ -311,7 +310,11 @@ while the host draws interpolated — visibly worse than today. `Fetch_Render_Of
 therefore virtual, with an `AnimClass` override that defers to `xObject` when attached,
 mirroring the existing `Center_Coord` override exactly.
 
+The Phase 3 crowded test also exposed coordinate-space changes in `AnimClass::Attach_To`: attaching converts a world position to a host-relative position, and detaching converts it back. Both assignments reset interpolation explicitly. This prevents those representation changes from looking like movement, including cases close enough to the origin to fall below the relocation threshold.
+
 ### D5 — The tick interval is measured, never derived from `Options.GameSpeed`
+
+The uniformity argument below assumes a stable measured interval. The Phase 1 live validation record documents the phase adjustments observed when that interval changes and limits what this clock alone establishes about visual smoothness.
 
 `FrameTimer` is armed at the **top** of `Main_Loop` (`code/mainloop.cpp:296`), before
 `Logic.AI()` (`:340`) and `Frame++` (`:436`). An alpha computed as
@@ -327,9 +330,7 @@ multiplayer `NetFrameTimer` path (`code/mainloop.cpp:259-294`), latency padding 
 `GameSpeed` changes without branching on `Session.Type`. Discard spans outside
 `[1, 250] ms` so a stall (alt-tab, level load, breakpoint) cannot stretch the next tick.
 A rejected span does not fall back to the previous estimate: it pins alpha at 256 until
-the next valid boundary-to-boundary span is measured, so a stall — or `GameSpeed=0`,
-whose sub-millisecond spans are all rejected — degrades to exactly today's rendering
-rather than to a glide computed against a stale interval.
+the next valid boundary-to-boundary span is measured, so a stall degrades to current-state rendering rather than a glide computed against a stale interval. `GameSpeed=0` explicitly disables render interpolation as well: an uncapped heavy scene can still take one or more milliseconds per tick, so rejecting zero-length spans alone cannot enforce the uncapped-speed acceptance criterion.
 
 The timestamp's **placement** in the loop is part of the design, not an implementation
 detail. `Sim_Tick_Advance()` stamps the boundary where the Phase 2 sweep runs —
@@ -346,11 +347,7 @@ frame could be composed at all — it is not a stutter, and it does not become o
 scenes get heavier: heavier scenes widen the composition gap, which is a frame-rate
 cost, not an interpolation error.
 
-The load path leans on the rejection rule deliberately: after a scenario load or save
-restore, the first measured span covers the load and is rejected, pinning alpha at 256 —
-which also zeroes every offset while `RenderPrevious` is still stale from
-deserialization (see Phase 2). That is the upper bound's concrete job; do not remove it
-as unreachable.
+The clock rejects long scenario loads and restores, but load duration is not a correctness guarantee. `ObjectClass::Serialize` explicitly resets `RenderPrevious` to the restored `Position` on loading, including loads shorter than 250 ms. No stale displacement survives deserialization; the stall policy independently prevents a long load from stretching the next interpolation interval.
 
 Clock is `timeGetTime()` at 1 ms. `SystemTimerClass` is `timeGetTime()/16`
 (`code/stimer.cpp:57`) and offers only ~3 distinct values per tick — far too coarse.
@@ -456,23 +453,23 @@ repetition today.
       acceptable here only because a wrong sample skews one debug log line and draws
       nothing. The whole measurement patch is disposable: Phase 5's close-out removes
       it.
-- [ ] Take the baseline from a **Release** build. The `Benchmark` harness is allocated
+- [x] Take the baseline from a **Release** build. The `Benchmark` harness is allocated
       only under `#ifdef _DEBUG` (`code/init.cpp:310-315`) and `BStart`/`BEnd` are no-ops
       when `Benches` is `NULL` (`code/_bench.h:21-22`), so `BENCH_*` figures do not exist
       in Release. Note also that `BENCH_OBJECTS` and `BENCH_TACTICAL` are printed
       (`code/debug.cpp:472,480`) but never bracketed anywhere in the tree — they read
       zero and must not be cited as evidence.
-- [ ] **Decision gate.** Order a vehicle across open ground, an Orca across the map, and
+- [x] **Decision gate.** Order a vehicle across open ground, an Orca across the map, and
       fire rockets at a distant target; record max px/tick for each. If ordinary vehicles
       come out under ~1.5 px/tick, the visible win is confined to air and projectiles —
       confirm that is still wanted before funding Phases 1–5.
-- [ ] **Threshold calibration** is a separate concern from the visible-benefit gate and
+- [x] **Threshold calibration** is a separate concern from the visible-benefit gate and
       uses the lepton maxima. Measurement only includes a multiplier when the measured
       object actually receives it, so exercise every threshold-controlled family and
       each materially different speed source deliberately: a veteran or speed-boosted
       vehicle (`code/foot.cpp:3407-3418`), a jumpjet, an unguided ballistic arc whose
       launch speed is computed from range and gravity (`code/weapon.cpp:242-251`),
-      rockets, and the particle velocity families (sparks, debris). Record the lepton
+      rockets, sparks, and the separate voxel-debris family. Record the lepton
       maxima per case in the plan.
 
 **Phase 0 results (2026-09-04).** Instrumentation on branch `fps-fix/phase-0`
@@ -526,25 +523,61 @@ The original sweep omitted every `RTTI_INFANTRY`, making the required jumpjet ca
 
 Both additional-instrumentation builds passed on September 5 with `& 'C:\Program Files\CMake\bin\cmake.exe' --build build --config Debug --target OpenTS -- /m /nodeReuse:false` and the same command with `--config Release`, using the existing VS 2022 Win32 configuration. Full logs are `baseline/calibration-debug-build-2026-09-05.log` and `baseline/calibration-release-build-2026-09-05.log`. Both report the existing C5055 warning in untouched `code/queue.cpp:4471`; no warning was reported for the changed measurement code. The builds were made before the measurement commit and carry a modified stamp. Runtime golden comparisons, render-rate measurements, and all live calibration remain unrun. No production manual change is needed for disposable private instrumentation; this phase record owns its measurement-log additions.
 
+**September 5 live calibration — measurements complete.** The user made the desktop available for this pass. Win32 Release `1e75984` plus disposable instrumentation ran windowed at logical 1280×800, Direct3D 11, `GameSpeed=3`, normal difficulty, on Windows 10.0.26200 as reported by the engine. Synthetic campaign fixtures isolated the motion cases using the locally installed game data; a separate stock Grand Canyon skirmish used three AI players, unit count 10, and 10,000 credits. The heavy scene was a synthetic campaign battle with 80 HVRs and 80 TTNKs, not a stock skirmish or a complete performance benchmark.
+
+The existing sweep omitted `RTTI_VOXELANIM`, so `code/mainloop.cpp` now adds a `debris` family. `VoxelAnimClass::AI` copies its bounce coordinate to `PositionCoord`, and the object participates in the air display layer (`code/vanim.cpp`); the existing position/projection metric therefore applies. The log also records the veterancy and `Has_Ability(ABILITY_FASTER)` value of the vehicle producing the lepton maximum, plus the loaded `VeteranSpeed` bonus. This reads simulation state and writes only disposable measurement state and logs. Production interpolation, movement, drawing, serialization, and settings are unchanged.
+
+The engine-resolved rules were exported once into the ignored evidence directory through a temporary, environment-gated read of `CCFileClass`; that export code was removed before the final measurement build. The loaded `RULES.INI` contains `VeteranSpeed=.30` but no enabled `FASTER` ability. Accordingly, `FPSBOOST.MAP` explicitly grants `BGGY` `VeteranAbilities=FASTER` and starts its sole vehicle at veterancy 200. Moving samples confirm `faster=1`, `veterancy=200`, and bonus 0.300. This is a controlled ability-path calibration, not a claim that ordinary retail veterans receive a speed bonus. The rookie fixture has no ability override.
+
+| Case and observed type | Accepted observation window | Max logical px/tick | Max lepton component/tick |
+|---|---|---:|---:|
+| Slow ground movement, `4TNK` | `FPSPROBE`, frames 2001–2341 | 2 | 15 |
+| Stock rookie buggy, `BGGY` | `FPSROOKIE`, frames 181–481 | 4 | 27 |
+| Ability-enabled veteran buggy, `BGGY` | `FPSBOOST`, frames 21–301 | 5 | 29 |
+| Orca takeoff, flight and landing, `ORCA` | `FPSPROBE`, frames 2801–3301 | 7 | 46 |
+| Jumpjet takeoff, flight and landing, `JUMPJET` | `FPSPROBE`, frames 2321–2901 | 3 | 23 |
+| Long-range deployed artillery, `Ballistic` | `FPSBALL`, frames 2081–2601 | 21 | 154 |
+| Hover MLRS rockets, `AAHeatSeeker2` | `FPSROCKET`, frames 281–781 | 8 | 74 |
+| Damaged buggy effects, `Spark` | `FPSSPARK`, frames 81–1281 | 6 | 42 |
+| Destroyed buggy wreckage, `TIRE` | `FPSSPARK`, frames 81–1281 | 5 | 40 |
+
+The artillery fixture uses the stock `GAARTY`/`155mm`/`Ballistic` chain, with a power-plant target about 16 cells away. Only the target's strength is increased so repeated shots can be observed; range, gravity, and projectile settings are unchanged. Successive isolated shots repeatedly reach 154 leptons on descent, excluding an isolated heap-slot reuse explanation for that maximum. The separate `FPSDEBRIS` destruction fixture also exercised flying tires, sparks, and guided rockets. Its rockets reached 10 logical pixels with the same 74-lepton maximum, illustrating why screen direction and elevation matter and why pixel maxima cannot substitute for lepton calibration. The crowded battle reported sparks up to 79 leptons and cannon projectiles up to 106; neither exceeds the isolated ballistic maximum. Crowded-scene address reuse remains a limitation of this disposable sampler.
+
+| Release scene | Frame window | Logged render count, min / median / max | Logged simulation count | Tick span range |
+|---|---|---|---|---|
+| Rookie buggy moving across flat ground | 181–481 | 2478 / 2925.5 / 3136 | 20 each interval | 44–51 ms |
+| Stock `G_CANYON` opening, three AI players | 21–601 | 2751 / 3545 / 3688 | 20 each interval | 30–53 ms |
+| Synthetic 160-vehicle battle | 21–601 | 389 / 506.5 / 755 | 20 each interval | 31–55 ms |
+
+These are counts at `GScreenClass::Render`, not monitor refresh measurements or a guarantee that every call produces a distinct displayed image. The logger labels the counts `/s`, but reports on the engine's `TIMER_SECOND` timer; log timestamps are approximately 0.96 seconds apart in these runs. Tick spans cluster around 48 ms. Loading, menu transitions, and intervals spanning focus pauses are excluded from the rate windows. Instrumentation and screenshot capture add overhead; the differing scene rates are descriptive observations, not a controlled before/after benchmark.
+
+**Gate decision:** proceed to the gated interpolation implementation. The live evidence supports visible motion improvements for aircraft, rockets, ballistic shells, particles, jumpjets, and faster ground vehicles; it does not remove the existing artwork-frame or integer-pixel limitations. The condition requiring a separate decision if ordinary ground motion stays below roughly 1.5 pixels was not met: the stock rookie buggy reaches 4. Use **`RENDER_INTERP_SNAP_LEPTONS = 1024`** as the initial Phase 2 heuristic: it is greater than 4×154 (616), with approximately 6.6× margin above the largest repeatable isolated sample. Keep the planned explicit teleport invalidation and Phase 2 per-family pre-snap diagnostics; modded speeds and unexercised movement paths are not bounded by this measurement.
+
+Evidence lives under ignored `baseline/fps-runtime-2026-09-05/`: `probe-release.log`, `calibration-release.log`, `actions.txt`, `measurements-full.json`, `measurements-summary.json`, screenshots, resolved rules, the synthetic fixture generator, and archived staged fixtures. Source logs are `Run/Debug/DEBUG_05-09-2026_12-54-33.LOG` and `Run/Debug/DEBUG_05-09-2026_13-02-25.LOG`. No new `Run/Exceptions` directory appeared. The initial probe was stopped at the returned main menu after exit input did not complete; the final calibration/skirmish process exited cleanly through the menu. No recording was made in Release, and these fixtures were not added to the golden set.
+
+Build commands were `& 'C:\Program Files\CMake\bin\cmake.exe' --build build --config Release --target OpenTS -- /m /nodeReuse:false` and the same command with `--config Debug`. Both final configurations passed with the existing C5055 warning at `code/queue.cpp:4471`; no new warning was reported in the touched measurement code. One earlier Release invocation compiled successfully but failed to copy runtime output while the old game process was still running; the retry after stopping that process passed. Logs are `debris-release-build.log`, `debris-release-build-retry.log`, and `debris-debug-build.log` in the evidence directory. No production manual change is needed for disposable private instrumentation; this plan owns its measurement contract and results. No commit, push, or later implementation phase has been performed in this pass.
+
+**Final regression check:** `pwsh -NoProfile -File baseline/fps-runtime-2026-09-05/Invoke-PreservedBaseline.ps1 -OutputDirectory baseline/fps-runtime-2026-09-05/golden-check-final -TimeoutSeconds 90` passed all four sessions at frame 300: `ts-gdi01` MATCH (20 s), `ts-nod01` MATCH (11 s), `fs-gdi01` MATCH (11 s), and `skirmish-gcanyon` MATCH (16 s). This local copy retains the stock driver's comparison logic, archives old sync dumps instead of deleting them, and foregrounds each replay. Its first preliminary invocation had a PowerShell variable collision in the added foreground wrapper; that was corrected, and both complete passes succeeded. Original `SUN.INI`, `RECORD.BIN`, and sync files are restored after the final check; local test maps and campaign registration are archived outside `Run/`. The golden set is unchanged. `git diff --check` passed. CTest and full gameplay/save/network validation were not run for this private measurement-only change.
+
 ### Phase 1 — The render clock and the A/B gate
-*Files: new `code/interp.h`, `code/interp.cpp`; `code/mainloop.cpp`, `code/gscreen.cpp`, `code/options.h`, `code/options.cpp`. Depends on: Phase 0.*
+*Files: new `code/interp.h`, `code/interp.cpp`, `code/renderclock.hh`, `code/renderclock.cpp`, and `tests/renderclock/`; `code/mainloop.cpp`, `code/gscreen.cpp`, `code/options.h`, `code/options.cpp`, `code/init.cpp`, `tests/CMakeLists.txt`, and `docs/BUILDING.md`. Depends on: Phase 0.*
 
 `code/CMakeLists.txt:24-32` globs `*.cpp`/`*.h` with `CONFIGURE_DEPENDS`, so new files
 need no build-file change.
 
-- [ ] Create `code/interp.h` / `code/interp.cpp` (header block copied from a recent
+- [x] Create `code/interp.h` / `code/interp.cpp` (header block copied from a recent
       OpenTS-authored file; `#include "always.h"` first per `docs/STYLE.md`). Public
       interface: `Sim_Tick_Advance()`, `Render_Frame_Begin()`, `Fetch_Render_Alpha()`
       returning 0–256 fixed point.
-- [ ] Implement the measured-interval clock per **D5**, including the `[1, 250] ms`
+- [x] Implement the measured-interval clock per **D5**, including the `[1, 250] ms`
       sanity window, the pin-to-256 behaviour on a rejected span, and the clamp of
       alpha to `[0, 256]`.
-- [ ] Call `Sim_Tick_Advance()` from `Main_Loop()` immediately before `Logic.AI()`
+- [x] Call `Sim_Tick_Advance()` from `Main_Loop()` immediately before `Logic.AI()`
       (`code/mainloop.cpp:340`), where the Phase 2 sweep will join it — the placement is
       load-bearing per **D5** — and `Render_Frame_Begin()` at the top of
       `GScreenClass::Render()` (`code/gscreen.cpp:386`) so every object in a frame
       shares one alpha.
-- [ ] Add the `SmoothMotion` gate now, not in Phase 5: `bool SmoothMotion;` on
+- [x] Add the `SmoothMotion` gate now, not in Phase 5: `bool SmoothMotion;` on
       `OptionsClass` beside `VSync` (`code/options.h:166`), default `true` in the
       constructor beside `VSync(false)` (`code/options.cpp:134` — **not** `:112`, which
       is `GameSpeed(3)`), read in `Load_Settings` with the other `[Video]` keys, and the
@@ -552,10 +585,10 @@ need no build-file change.
       `Fetch_Render_Offset` returns zero and the draw path is byte-identical to today.
       Every later phase's verification A/Bs against this switch, so it must exist before
       the first visible change. Persistence and the manual page stay in Phase 5.
-- [ ] Log, for a window of consecutive frames spanning at least one boundary, the pair
-      (alpha, wall-clock ms since the last boundary). **Acceptance: alpha advances
-      uniformly — delta-alpha per delta-ms stays near 256/span across the window,
-      including across the boundary.** The last frame before a boundary is *expected*
+- [x] Preserve the recording options layout and keep the current presentation toggle when restoring raw recorded options.
+- [x] Add asset-independent clock and options-layout tests and pass them in Win32 Debug and Release.
+- [x] Log, for a window of consecutive frames spanning at least one boundary, the pair
+      (alpha, wall-clock ms since the last boundary). **Acceptance: alpha follows the measured-span formula within fixed-point rounding, and boundary samples are recorded rather than assumed uniform.** The September 5 live record below qualifies the original claim of uniform progression across changing intervals. The last frame before a boundary is *expected*
       to read about `256 * (T - R)/T`, not 256 — per **D5** that is correct behaviour,
       and tuning the clock to force it to 256 would break uniformity. Record the
       numbers in a heavy scene as well as a light one.
@@ -565,33 +598,49 @@ speed slider; alt-tab for ten seconds and confirm the span is rejected rather th
 recorded; `GameSpeed=0` pins alpha at 256. **Nothing on screen may change — that is the
 test.**
 
+**September 5 Phase 1 offline implementation:** work moved to `fps-fix/phase-1`, branched from `1e75984` while retaining the uncommitted Phase 0 measurement changes. `RenderClockClass` is independent of the game and receives explicit unsigned 32-bit millisecond timestamps; the small engine adapter uses `timeGetTime()`, stamps immediately before `Logic.AI()`, and latches one alpha at entry to `GScreenClass::Render()`. Initial, zero, and greater-than-250-ms spans draw current state; a subsequent valid span restores interpolation. Elapsed time is checked before fixed-point multiplication, including after unsigned timer wrap. `SmoothMotion=no` and `GameSpeed=0` explicitly pin alpha to 256. No drawing code consumes the alpha yet, and simulation timers, RNG, object positions, and save serialization are untouched.
+
+The options-layout check found a compatibility boundary absent from the original Phase 1 inventory: `Save_Recording_Values` and `Load_Recording_Values` in `code/init.cpp` write/read `sizeof(OptionsClass)` raw bytes. Before this change, a Win32 MSVC probe measured size 112, `IntegerScaling` at byte 52, `VSync` at 53, `Renderer` at 56, and `CursorScale` at 60. `SmoothMotion` occupies former padding byte 54, so the size and existing field offsets stay unchanged. Compile-time assertions enforce this, and playback preserves the locally configured toggle across the raw options read so old padding bytes cannot become a boolean preference. New recordings carry the toggle in a byte old readers ignore. This preserves the layout; an actual replay comparison remains required before claiming runtime compatibility.
+
+Clock diagnostics are opt-in through process environment variable `OPENTS_INTERP_TRACE=1`. They buffer up to 4096 consecutive render-frame samples, including `frame`, millisecond `now`, `elapsed`, measured `span`, `alpha`, `speed`, and `smooth`, then write the window after observing four frame-number boundaries or reaching capacity. Startup, gate/speed changes, and rejected long spans arm capture, with at most eight windows per process. Capture waits until simulation has started and, unless speed is uncapped, a nonzero span exists, so load-screen rendering cannot consume the startup window. Logging is outside each captured window and can perturb later timing; use the buffered timestamps, not the later log-prefix timestamps, for slope calculations. Long rejected spans also get a one-line diagnostic. This disposable trace is removed with the other measurement code in Phase 5.
+
+The asset-independent `renderclock` CTest entry passes in Win32 Debug and Release. It exercises startup at timestamp zero, quarter/half/three-quarter progression, frame-latched reads, disabled smoothing, changed cadence, a ten-second stall and recovery, 0/1/250/251-ms boundaries, 32-bit rollover, large elapsed-time clamping, and a known composition gap across a tick boundary. The initial test build exposed the inherited Windows `max` macro through `options.h`; parenthesizing the standard-library call resolved that compile error. Test targets then built without warnings. Commands: `& 'C:\Program Files\CMake\bin\cmake.exe' --build build --config <Debug|Release> --target RenderClockTest -- /m /nodeReuse:false`, followed by `& 'C:\Program Files\CMake\bin\ctest.exe' --test-dir build -C <Debug|Release> -R '^renderclock$' --output-on-failure`. Build and layout evidence are under ignored `baseline/fps-phase1-2026-09-05/`; `docs/BUILDING.md` owns the reusable test workflow.
+
+**September 5 Phase 1 validation:** both full Win32 engine configurations passed, including final rebuilds after restricting the trace to actual simulation frames. Commands were `& 'C:\Program Files\CMake\bin\cmake.exe' --build build --config <Debug|Release> --target OpenTS -- /m /nodeReuse:false`. Logs are `engine-debug-build.log`, `engine-release-build.log`, `engine-debug-final.log`, and `engine-release-final.log` under `baseline/fps-phase1-2026-09-05/`. The broad recompiles report warnings in untouched assembly and C5055 in `queue.cpp` and `techno.cpp`; the added/touched implementation reports no warnings. The final adapter-only rebuilds report none. The focused clock tests passed in both configurations; the unrelated `logstress` test was not rerun.
+
+The user subsequently supplied a desktop window. With the original runtime data restored, `pwsh -NoProfile -File baseline/fps-runtime-2026-09-05/Invoke-PreservedBaseline.ps1 -OutputDirectory baseline/fps-phase1-2026-09-05/golden-smooth-default -TimeoutSeconds 90` passed all four golden sessions at frame 300 with the default-enabled gate: GDI 21 s, Nod 11 s, Firestorm GDI 12 s, Grand Canyon 16 s. The same driver with `-Session skirmish-gcanyon`, output directory `golden-smooth-off`, `[Video] SmoothMotion=no`, and `OPENTS_INTERP_TRACE=1` also returned MATCH (17 s). Its 226 captured render frames, spanning simulation frames 2–6, all report `smooth=0` and `alpha=256`, verifying that playback retains the local preference instead of consuming the old padding byte.
+
+Release live play used the existing synthetic `FPSROOKIE` and `FPSHEAVY` fixtures with `SmoothMotion=yes` and trace enabled. The nine complete windows across live play and disabled playback contain **1748 samples, with zero deviations from the specified alpha formula** (`clock-analysis.json` and `analyze_clock.py` in the evidence directory). Light-scene startup captured 537 samples across frames 2–6, reaching alpha 0–256 with settled 48-ms spans. Changing the game-controls slider from speed 3 to 2 produced measured spans settling toward 32 ms. At uncapped speed 0, all five samples across frames 3229–3233 stayed at alpha 256 even with spans of 0, 1, and 2 ms. Returning to speed 3 restored measured interpolation.
+
+Minimizing the game for ten seconds and restoring it exercised actual focus loss; the boundary log rejected **10568 ms** at frame 649. The next window reports alpha 256 while that span is invalid and normal formula values after a valid span arrives. Menu pauses and the shorter heavy-scene minimize/restore checks were rejected in the same way. The heavy fixture began with 80 HVRs and 80 TTNKs; captures include the active battle and three four-boundary windows, with 139, 70, and 75 samples respectively. Scene captures and the source call-site audit found no added drawing effect; `Fetch_Render_Alpha` has no drawing consumer in this phase. This is qualitative visual evidence, not a pixel-identical image comparison between builds.
+
+**Clock limitation established by the live trace:** exact per-span arithmetic does not imply perfectly uniform wall-clock phase across unequal measured intervals. For example, in the warm heavy window, frame 1730 ended at `now=18556800`, `elapsed=44`, `span=49`, `alpha=229`; frame 1731 began at `now=18556803`, `elapsed=2`, `span=45`, `alpha=11`. Both samples satisfy the formula, but changing the measured interval adjusts the render phase. The original D5 wording overstated cross-boundary uniformity under cadence jitter. Phase 1 delivers the planned measured-span clock, rejection policy, and gate; it does not establish a jitter-free visual outcome. The first visible Phase 3 A/B must assess this interval-change effect in a crowded scene before accepting a claim of smooth motion. Do not silently reinterpret these formula checks as proof of that future visual acceptance.
+
+Source logs are `Run/Debug/DEBUG_05-09-2026_14-03-07.LOG` (disabled replay) and `Run/Debug/DEBUG_05-09-2026_14-04-09.LOG` (Release live play), preserved as `smooth-off-replay.log` and `live-release.log`. The game exited cleanly through its menu. No new exception directory appeared. Test campaign registration and maps were archived outside `Run/`; original `SUN.INI`, `RECORD.BIN`, and `SYNC0.TXT` were restored and hash-checked. The golden set is unchanged. `git diff --check` passed. The desktop is released, and no Phase 2 work, commit, or push has been performed. `SmoothMotion` remains an internal gate; the existing production manual still describes current drawing accurately, and its public option page and settings write-back remain in Phase 5.
+
 ### Phase 2 — Previous-position capture
 *Files: `code/object.h`, `code/object.cpp`, `code/anim.h`, `code/anim.cpp`, `code/mainloop.cpp`. Depends on: Phase 1.*
 
-- [ ] Add `Coord RenderPrevious;` to `ObjectClass` beside `Position`, initialised in the
+- [x] Add `Coord RenderPrevious;` to `ObjectClass` beside `Position`, initialised in the
       constructor (`code/object.cpp:157-176`). Deliberately omit it from
       `ObjectClass::Serialize` (`code/object.cpp:2050-2071`) and `Compute_CRC`
       (`code/object.cpp:2246`), with a one-line comment saying the omission is
       intentional — that omission is the load-bearing part.
-- [ ] Add the tick-boundary sweep over `DisplayClass::Layer[]` copying `Position` into
+- [x] Add the tick-boundary sweep over `DisplayClass::Layer[]` copying `Position` into
       `RenderPrevious`, called from `Main_Loop()` immediately before `Logic.AI()`
       (`code/mainloop.cpp:340`) so the snapshot is start-of-tick state.
-- [ ] Add `Invalidate_Render_Interpolation()` and wire the two paths listed in **D2**
+- [x] Add `Invalidate_Render_Interpolation()` and wire the two paths listed in **D2**
       (`Unlimbo`, chronoshift).
-- [ ] Add the post-`Logic.AI()` threshold walk from **D2**: one pass over
+- [x] Add the post-`Logic.AI()` threshold walk from **D2**: one pass over
       `DisplayClass::Layer[]` snapping `RenderPrevious` to `Position` wherever the tick
       delta exceeds `RENDER_INTERP_SNAP_LEPTONS`. Derive the constant from the Phase 0
       per-family measured maxima with the margin **D2** states (the retail INI values
       are a sanity cross-check only), and record the measured maxima and the chosen
       value in the plan when done.
-- [ ] Declare `virtual Coord Fetch_Render_Offset(void) const;` beside `Render_Coord`
+- [x] Declare `virtual Coord Fetch_Render_Offset(void) const;` beside `Render_Coord`
       (`code/object.h:244`), implement per **D3**, and override in `AnimClass` per **D4**.
-- [ ] State the load path where it lives in code: a save restore fills `Position`
-      field-by-field without running `Unlimbo` (`code/object.cpp:2050-2071`), so
-      `RenderPrevious` is stale until the first sweep — and no frame can draw the stale
-      offset because the first post-load span is rejected and alpha pins at 256
-      (**D5**).
-- [ ] Extend the Phase 0 log line with the largest offset magnitude across the layers,
+- [x] Reset interpolation explicitly in `ObjectClass::Serialize` after restoring `Position`, without adding a serialized field. This replaces the original assumption that every load takes longer than 250 ms; see **D5**.
+- [x] Extend the Phase 0 log line with the largest offset magnitude across the layers,
       the largest **pre-snap** tick delta, and a per-family count of threshold snaps. A
       snapped offset reads zero, so without the pre-snap figures a false snap — a
       legitimate fast mover silently losing interpolation — would be invisible.
@@ -601,32 +650,47 @@ test.**
       Phase 4 verification scenarios on retail data, with the pre-snap log kept alive
       through both phases.
 
-**Verification:** save mid-mission, quit, reload — the save must load, and the first
-seconds after the load must draw at true positions (the **D5** pin covering the stale
-`RenderPrevious`). Play a two-client LAN skirmish past ~2000 frames with no desync
-message. Chronoshift a unit and confirm its offset for that frame is zero. **Nothing on
-screen may change.**
+**Verification:** restore a mid-mission save and verify the reconstructed positions; short chronoshifts must have zero offset. Phase 2 has no drawing consumer by itself. The user requested Phases 2 and 3 together, so this implementation was runtime-tested as the combined change, not as a separate visually unchanged Phase 2 build. The two-client LAN check remains outstanding as recorded below.
 
 ### Phase 3 — Apply the offset at the two funnel sites (first visible result)
 *Files: `code/object.cpp`, `code/tactical.cpp`. Depends on: Phase 2.*
 
-- [ ] `code/object.cpp:1192` — `Coord_To_Pixel(Render_Coord() + Fetch_Render_Offset(), point)`.
-- [ ] `code/tactical.cpp:2753` — `Coord_To_Pixel(obj->Center_Coord() + obj->Fetch_Render_Offset(), pixel)`.
+- [x] `ObjectClass::Render` — `Coord_To_Pixel(Render_Coord() + Fetch_Render_Offset(), point)`.
+- [x] `Tactical::Draw_Objects` — `Coord_To_Pixel(obj->Center_Coord() + obj->Fetch_Render_Offset(), pixel)`.
       This supplies the pixel to `Draw_Pre_Render`/`Draw_Post_Render` (selection box,
       health bar) and **must land with the first site** or decorations detach from bodies.
-- [ ] Resolve the **D3** lift asymmetry: establish in a live game which of the two
-      `Position.Z` subtractions — the funnel's (`code/tactical.cpp:207-214`) or the
-      SHP-aircraft shift in `Techno_Draw_Object` (`code/techno.cpp:5951-5953`) — carries
-      the visible lift for an SHP-drawn aircraft, route the interpolated Z through
-      exactly one, and confirm the voxel body path (`code/aircraft.cpp:478`) glides
-      vertically.
+- [x] Resolve the **D3** lift asymmetry against active callers: `AircraftClass::Draw_It` draws voxel aircraft directly, then calls the empty `FootClass::Draw_It`. It never calls `Techno_Draw_Object`; the inherited SHP-aircraft switch branch has no aircraft caller. Retain that unused branch unchanged. The active voxel body's altitude is projected once by the funnel. The Release Orca trace confirms intermediate Z positions during takeoff.
 
 Two lines plus one check. That is the whole phase.
 
-**Verification:** A/B against `SmoothMotion=no`. Orca across the map and rockets at a
-distant target should glide. Selection box and health bar must stay glued to a moving
-unit. Chronoshift, drop-pod and tunnel a unit each — no streaking. Ground units are
-*expected* to look unchanged. LAN skirmish past ~2000 frames with no desync.
+**Verification:** A/B against `SmoothMotion=no`, including aircraft, rockets, selection decorations, short teleports, drop pods, and tunnel travel. Slow ground vehicles have fewer distinct intermediate pixels available; faster ground vehicles can benefit too, as Phase 0 established.
+
+- [x] Win32 Debug and Release builds; asset-independent clock and position arithmetic checks.
+- [x] Golden replay comparisons with interpolation enabled and disabled.
+- [x] Release save/abort/reload, short teleport, tunnel travel, and drop-pod delivery.
+- [x] Release light and crowded A/B traces, with the cadence-jitter limitation retained.
+- [ ] Two-client LAN session beyond 2000 frames: unavailable on this one desktop, where `Init_Application` in `code/startup.cpp` rejects a second instance through `AppMutex`; no second machine was connected. Replay matches do not replace this check.
+- [x] Targeted ramp, bridge, and cliff-edge occlusion review completed during the combined milestone's live pass, with both smoothing modes. See the live acceptance record; broader terrain coverage and dependent visuals remain later work.
+
+### Phases 2–3 implementation and validation record — September 5, 2026
+
+`RenderPrevious` is initialized with `Position`, captured across every display layer immediately before `Logic.AI`, and explicitly reset on entry, teleport, save restoration, and animation attachment-coordinate changes. The post-AI pass snaps deltas whose largest absolute component exceeds 1024 leptons. This is the Phase 0 recommendation, more than four times that calibration's maximum of 154. Arithmetic lives in the asset-independent `renderposition` module and widens before coordinate subtraction and multiplication. The member is omitted from field-by-field serialization and the simulation checksum. The two drawing funnels consume the same virtual offset, and attached animations obtain it from their host.
+
+The SHP-aircraft audit corrected a premise in D3: the current aircraft renderer has no SHP body route. The inherited SHP-aircraft height branch is unreachable from aircraft drawing and remains unchanged. Voxel aircraft receive their interpolated altitude through the world-to-pixel funnel once. Their separate shadows remain Phase 4 work.
+
+Commands used the installed CMake at `C:\Program Files\CMake\bin\cmake.exe`: `-S . -B build -G "Visual Studio 17 2022" -A Win32`, then `--build build --config Debug --target RenderClockTest -- /m /nodeReuse:false`, `--build build --config Debug --target OpenTS -- /m /nodeReuse:false`, and `--build build --config Release --target OpenTS RenderClockTest -- /m /nodeReuse:false`. Subsequent source refinements rebuilt the `OpenTS` target in each configuration. Both configurations passed `ctest --test-dir build -C <configuration> -R '^renderclock$' --output-on-failure`. Tests cover three-axis signed offsets, alpha endpoints, invalidated state, the inclusive threshold, extreme-coordinate delta measurement, and large-coordinate precision, alongside the existing clock and replay-options layout checks. The full builds retained inherited assembly A6004 and C5055/C4805 warnings; no new warning was reported in the modified interpolation implementation. Final incremental build logs are `engine-debug-final.log` and `engine-release-final.log` under the evidence directory.
+
+All four frame-300 golden recordings matched with smoothing enabled before the attachment refinement; the disabled Grand Canyon replay also matched. The preservation wrapper is the previously audited ignored `baseline/fps-runtime-2026-09-05/Invoke-PreservedBaseline.ps1`, used with `-OutputDirectory` and `-TimeoutSeconds 90`, plus `-Session skirmish-gcanyon` for the disabled case. The final replay after the refinement also matched all four recordings: GDI 21 seconds, Nod 12, Firestorm GDI 12, and Grand Canyon 17. Its report is retained as `golden-final/report.txt`; no golden recording or sync file was replaced.
+
+Release runtime evidence is under ignored `baseline/fps-phase23-2026-09-05/`. The synthetic fixtures use retail object definitions but different arrangements from Phase 0: an Orca and HVR with a distant target, a short-teleport buggy using the teleport locomotor, a stock subterranean tank, an infantry drop-pod team, and a crowded 56-HVR versus 56-TTNK battle plus an Orca. The first pod fixture had incorrect team-action parameters and did not deliver a team; after correcting parameter kind and waypoint spelling, four infantry arrived. The successful descent measured 144 leptons per tick with zero threshold snaps. The short teleport measured 512 leptons by the independent prior-tick log while the interpolation delta and maximum offset were zero; this establishes that the explicit hook works below the fallback threshold. The tunnel tank submerged and resurfaced at its destination, with a maximum interpolation delta of 13 and no threshold snaps.
+
+The initial Release run saved `SAVE0029.SAV` while the Orca was airborne, aborted the mission, and loaded the save successfully. Its log records `LOADING GAME ... Complete` and rejection of the 34393-ms load/menu interval. The explicit reset in `ObjectClass::Serialize` also covers fast loads, which were not separately forced. The saved mission and screenshots are retained locally. Body and selection decorations remained together in the inspected captures; this is screenshot and coordinate-path evidence, not a captured high-frame-rate video or a pixel-identical build comparison.
+
+The crowded disabled run reached frame 2265; the final enabled run reached frame 3471. The initial disabled run revealed 18 threshold snaps in the catch-all animation family, caused by world-to-relative attachment-coordinate changes. Explicit resets in `AnimClass::Attach_To` resolved them: the final enabled run recorded zero threshold snaps in every family. Its maximum pre-snap deltas were 26 for vehicles, 51 for aircraft, 754 for bullets, 79 for particles, and 102 for other objects. Jumpjets and voxel debris were absent from this crowded fixture and are not claimed as newly exercised; their Phase 0 calibration remains recorded above and their Phase 4 scenarios are still required. The observed 754-lepton bullet delta also shows why the threshold remains a heuristic: the initial calibration is not a universal bound.
+
+The three retained live logs contain 4357 clock samples and 1345 position samples, with zero formula errors in `analyze.py`/`analysis.json`. All 488 disabled position samples have zero offset and only one drawn position per object per tick. Enabled samples include three distinct Orca altitude pixels during takeoff, eight flight positions in one earlier Orca tick, and ten rocket positions within one crowded tick (nine in another). This establishes intermediate positions through the active drawing funnel. Unequal tick spans still change the interpolation phase and integer pixels still quantize travel; these checks support improved motion resolution, not perfectly uniform wall-clock motion. The original Phase 1 cadence limitation remains documented and no clock redesign is claimed.
+
+Public documentation moved forward from Phase 5 because drawing now changes visibly: `manual/content/keys/smoothmotion--client-settings.md` owns the option and current limitations, and `manual/changes/smooth-motion.md` records the addition. `python manual/tools/manage.py update`, both scaffolds, and the complete `python manual/tools/manage.py check` passed (192.7 seconds for the complete check). Settings write-back and removal of disposable instrumentation remain in Phase 5. The game exited cleanly, test maps/registration/save and final sync output were archived, and original `SUN.INI`, `RECORD.BIN`, and `SYNC0.TXT` were restored and hash-checked. No new exception directory appeared. Final source and executable hashes are in `final-hashes.json`; restoration checks are in `restoration.json`. `git diff --check` passed. No commit or push is authorized by this implementation request.
 
 ### Phase 4 — Dependent visuals
 *Files: `code/aircraft.cpp`, `code/unit.cpp`, `code/building.cpp`, `code/vanim.cpp`, `code/techno.cpp`. Depends on: Phase 3.*
@@ -679,14 +743,14 @@ and confirm sparks stay unobtrusive.
       and the `RenderFramesThisSecond` / `LastRenderFramesPerSecond` counters. The
       measurement patch was disposable; its results live in this plan's phase records,
       not in the engine.
-- [ ] `python manual/tools/manage.py update`, then scaffold and write:
+- [x] Moved into Phase 3 when drawing became visible: `python manual/tools/manage.py update`, then scaffold and write:
       `manage.py scaffold key SmoothMotion` and
       `manage.py scaffold change smooth-motion --category feature --target-type key --target-id SmoothMotion --effect added --title "<title>"`.
       Model the prose on `manual/changes/bgfx-presenter.md`. State plainly that
       simulation rate, pace, balance, save format and multiplayer behaviour are
       unchanged, and that only where an object is *drawn* between two simulation
       positions has changed. Say which movers are visibly affected and which are not.
-- [ ] `python manual/tools/manage.py check`.
+- [x] `python manual/tools/manage.py check` passed for the Phase 3 public documentation. Repeat after Phase 4/5 changes affect its claims.
 - [ ] Clean-configure Win32 Debug and Release per `docs/BUILDING.md`.
 - [ ] Commit — **only on explicit user request**. `AGENTS.md:76` permits committing only
       when asked. Imperative subject ≤72 characters, no body unless a brief factual
@@ -798,7 +862,35 @@ re-reviewed.
 
 ## Status
 
-Phase 0 is partially implemented on `fps-fix/phase-0`: disposable engine instrumentation and the September 4 replay measurements are committed. Release render-rate measurements, the deliberate calibration cases, and a heavy scene remain outstanding; see the Phase 0 results above. Phases 1-5 have not started. The measurement branch was rebased onto the merged baseline on September 5.
+Phases 0–3 remain implemented and uncommitted on `fps-fix/phase-1`, combined with completed map-size Phases 1–3. All available combined validation now passes, including final goldens and the targeted terrain checks. Two-client LAN is the sole unavailable acceptance check; the user explicitly confirmed that no second client exists. Cadence jitter and the documented dependent-visual limitations remain. No FPS Phase 4–5 implementation, commit, push, or PR was performed.
+
+### September 5 combined audit
+
+This subsection is the historical background-only pass, before the user supplied desktop access. The live acceptance subsection below supersedes its remaining-check and runtime-file status.
+
+Current evidence is under ignored `baseline/cross-plan-2026-09-05/`. The initial dirty diff and copies of pre-existing modified/new source and documentation are retained there. Hash comparisons confirm all 17 FPS implementation files are unchanged by this audit (`fps-source-preservation.json`). No material production FPS defect was established that justified rewriting the working implementation.
+
+The audit traced the start/end tick sweeps, three-axis offsets, body/decorations funnels, animation delegation, raw recording options layout, CRC exclusion, and explicit resets. `AnimClass::Detach` removes the dying animation from the map before clearing its attachment; live changes continue through `Attach_To`'s resets. `Render_Coord` remains simulation-facing. No synchronized RNG or serialized field was added, and all measurement instrumentation remains available.
+
+The new clock regression reproduces the documented 49/45-ms cadence example: alpha 229 before a boundary and 11 afterward represents 38 fixed-point phase units over 3 ms. It verifies the nonuniform progression rather than interpreting formula correctness as uniformly smooth motion. Existing tests still exercise both gate values, stalls, wrapping, offsets, and layout. No new rendered smoothness claim is made.
+
+Combined Debug and Release engine builds, all three CTest entries in both configurations, and the complete manual gate pass. Exact commands, resolved failures, and evidence filenames are recorded once in the [map-size combined validation record](map-size-changes.md#september-5-combined-implementation-and-validation).
+
+The historical FPS report at `baseline/fps-phase23-2026-09-05/golden-final/report.txt` was inspected: four MATCH results at frame 300. It predates the map changes. No game or editor was launched during this audit because current desktop availability was not confirmed. Outstanding checks are combined Debug goldens with both toggle values, targeted ramp/bridge/cliff occlusion with both values, and a compatible two-client LAN session beyond 2000 frames. A second compatible client has not been supplied; the local instance mutex prevents an ordinary second local game instance.
+
+Runtime settings, recording, and sync hashes remain identical to the pre-work snapshot. No save existed in `Run/` at the start; archived saves and recordings were not modified. Only build outputs in `Run/` were refreshed, with `Language.dll` from Release. The game is closed, `assets/` was untouched, and no commit, branch switch/deletion, push, or PR occurred.
+
+### September 5 live acceptance
+
+The user's “go ahead” authorized desktop use. [Map-size's live acceptance record](map-size-changes.md#september-5-live-acceptance) owns the shared commands, measurements, runtime failures and fixes, final validation, and restoration evidence under `baseline/cross-plan-live-2026-09-05/`.
+
+All four original frame-300 goldens matched on the final combined Debug binary with `SmoothMotion=yes`, then all four matched with `no`, after temporary test code was removed. Full Win32 Debug/Release builds and all three CTest entries in each configuration pass. The complete manual gate passes. Earlier FPS-only results remain historical; these are fresh combined-build results.
+
+Stock Grand Canyon QA moved a buggy down a 416-lepton ramp, along a bridge deck, and beside a separate cliff edge. The inspected on/off captures show no new occlusion defect in these limited cases, paired simulation dumps match, disabled render offsets are all zero, and the retained measurement logs report zero threshold snaps. The 256×256 QA pass rendered all four waypoint areas and drove a scout from (190,192) to (322,320), reaching and holding the destination by frame 2000 in both modes; both frame-2400 dumps match. These tests used temporary actor/order/camera setup, with combat inert for the cross-map scout, and are distinct from unmodified golden runs. Rejected test setups are not counted as passes.
+
+The live 256×256 skirmish saved and reloaded in Debug. The final Release binary also loaded that save and deployed the construction vehicle. These are actual runtime observations, not conclusions inferred from compilation or offset arithmetic. The measured-span clock remains unchanged and still has the documented cadence-jitter limitation; none of this establishes uniformly smooth wall-clock motion or covers Phase 4's dependent effects.
+
+All temporary map measurements, diagnostic hooks, and QA drivers were archived and removed. `final-fps-preservation.json` verifies byte-identical preservation of all 17 pre-existing FPS implementation files, including explicit load/spawn/teleport/attachment resets and the required FPS instrumentation. Runtime originals were restored and hash-checked; the game/editor are closed, generated fixtures/saves/output are archived, and `assets/` is untouched. The user confirmed no second LAN client is available, so that checkbox remains open. Finish or explicitly resolve that deferred gate before claiming full multiplayer acceptance; the recorded next cross-plan milestone is 64-bit conversion, outside this request.
 
 The current text reflects three review cycles: the original dual adversarial pass, a
 source-verified deep dive (2026-08-27) that added the *Relationship to the HD

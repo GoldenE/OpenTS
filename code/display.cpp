@@ -2895,9 +2895,11 @@ void DisplayClass::Encroach_Shadow(void)
 	int x;
 	int y;
 	Cell cell;
+	// In_Radar's diamond has no coordinate greater than Width + Height - 1.
+	int const end = std::min(MAP_CELL_W, PlayRect.Width + PlayRect.Height);
 
-	for (y = 0; y < MAP_CELL_H; y++) {
-		for (x = 0; x < MAP_CELL_W; x++) {
+	for (y = 0; y < end; y++) {
+		for (x = 0; x < end; x++) {
 			cell.X = x;
 			cell.Y = y;
 			if (!In_Radar(cell)) continue;
@@ -2915,8 +2917,8 @@ void DisplayClass::Encroach_Shadow(void)
 	**	Mark all shadow edge cells to be fully shrouded. All adjacent mapped
 	**	cell should become partially shrouded.
 	*/
-	for (y = 0; y < MAP_CELL_H; y++) {
-		for (x = 0; x < MAP_CELL_W; x++) {
+	for (y = 0; y < end; y++) {
+		for (x = 0; x < end; x++) {
 			cell.X = x;
 			cell.Y = y;
 			if (!In_Radar(cell)) continue;

@@ -19150,6 +19150,24 @@ Smoke:
       guard: null
     note: the engine reads this key twice into two internal slots; both receive the same animation
     level: RulesClass
+SmoothMotion:
+  key: SmoothMotion
+  scopes:
+  - applies_to:
+    - client settings
+    file: sun.ini
+    section:
+      kind: literal
+      name: Video
+    value_type: boolean
+    status: generated
+    _provenance:
+      default_candidate: 'yes'
+      declared_in: OptionsClass
+      member: SmoothMotion
+      source: code/options.cpp
+      guard: null
+    level: OptionsClass
 SnowOccupationBits:
   key: SnowOccupationBits
   scopes:

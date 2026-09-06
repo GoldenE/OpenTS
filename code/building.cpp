@@ -6945,7 +6945,8 @@ void BuildingClass::Read_INI(CCINIClass const & ini)
 				int y = atoi(strtok(NULL, ","));
 				cell = Cell(x,y);
 			} else {
-				cell = Cell(atoi(strtok(NULL, ",")));
+				int c = atoi(strtok(NULL, ","));
+				cell = Cell(c % 128, c / 128);
 			}
 
 			/*

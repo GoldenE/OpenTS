@@ -186,6 +186,7 @@
 
 #include <algorithm>
 #include <conio.h>
+#include <cstddef>
 #include <ctime>
 #include <dos.h>
 #include <unordered_set>
@@ -3025,6 +3026,8 @@ static char const RecordingTag[8] = "OTSREC1";
  *=========================================================================*/
 bool Save_Recording_Values(CCFileClass & file)
 {
+	static_assert(sizeof(OptionsClass) == 112 && offsetof(OptionsClass, SmoothMotion) == 54 && offsetof(OptionsClass, Renderer) == 56,
+		"SmoothMotion must occupy existing padding in the recorded OptionsClass layout");
 	DebugString("Saving recording values for scenario : %s\n", Scen->ScenarioName);
 	file.Write(RecordingTag, sizeof(RecordingTag));
 	file.Write(&Session.Type, sizeof(Session.Type));
@@ -3103,7 +3106,10 @@ bool Load_Recording_Values(CCFileClass & file)
 	file.Read(Scen->ScenarioName, sizeof(Scen->ScenarioName));
 	file.Read(&Whom, sizeof(Whom));
 	file.Read(&Special, sizeof(SpecialClass));
+	// Older recordings carry padding at SmoothMotion's offset, not a render preference.
+	bool smooth_motion = Options.SmoothMotion;
 	file.Read(&Options, sizeof(OptionsClass));
+	Options.SmoothMotion = smooth_motion;
 
 	file.Read(&Session.Options, sizeof(Session.Options));
 	file.Read(Session.Handle, sizeof(Session.Handle));

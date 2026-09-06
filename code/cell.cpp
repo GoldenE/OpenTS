@@ -4461,7 +4461,7 @@ void CellClass::Post_Load(void)
 {
 	BASECLASS::Post_Load();
 
-	int id = CellID.X + (CellID.Y << 9);
+	int id = CellID.X + CellID.Y * MAP_CELL_W;
 	if (Map.Array[id] != NULL) {
 		delete Map.Array[id];
 		Map.Array[id] = NULL;

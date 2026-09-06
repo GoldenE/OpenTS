@@ -40,6 +40,7 @@
 #include "infantry.h"
 #include "infatype.h"
 #include "internet.h"
+#include "interp.h"
 #include "ipxmgr.h"
 #include "language\language.h"
 #include "logic.h"
@@ -67,6 +68,7 @@
 #include "wonline.h"
 
 #include "bench.hh"
+#include "renderposition.hh"
 #include "special.hh"
 
 #include <algorithm>
@@ -102,17 +104,23 @@ enum MeasureFamily {
 	MEASURE_BULLET,
 	MEASURE_PARTICLE,
 	MEASURE_JUMPJET,
+	MEASURE_DEBRIS,
+	MEASURE_OTHER,
 	MEASURE_COUNT
 };
 
-char const * const MeasureFamilyName[MEASURE_COUNT] = {"unit", "air", "bullet", "particle", "jumpjet"};
+char const * const MeasureFamilyName[MEASURE_COUNT] = {"unit", "air", "bullet", "particle", "jumpjet", "debris", "other"};
 
 struct MeasureMaxima {
 	int PixelDelta[MEASURE_COUNT] = {};
 	int LeptonDelta[MEASURE_COUNT] = {};
 	int Samples[MEASURE_COUNT] = {};
+	std::int64_t PreSnapDelta[MEASURE_COUNT] = {};
+	int ThresholdSnaps[MEASURE_COUNT] = {};
 	std::string PixelType[MEASURE_COUNT];
 	std::string LeptonType[MEASURE_COUNT];
+	int UnitVeterancy = 0;
+	bool UnitFaster = false;
 	int SpanLastMs = 0;
 	int SpanMinMs = 0;
 	int SpanMaxMs = 0;
@@ -130,11 +138,12 @@ int Measure_Family(ObjectClass const * object)
 		case RTTI_AIRCRAFT: return(MEASURE_AIRCRAFT);
 		case RTTI_BULLET: return(MEASURE_BULLET);
 		case RTTI_PARTICLE: return(MEASURE_PARTICLE);
+		case RTTI_VOXELANIM: return(MEASURE_DEBRIS);
 		case RTTI_INFANTRY: {
 			InfantryClass const * infantry = static_cast<InfantryClass const *>(object);
-			return(infantry->Class != nullptr && infantry->Class->IsJumpJet ? MEASURE_JUMPJET : -1);
+			return(infantry->Class != nullptr && infantry->Class->IsJumpJet ? MEASURE_JUMPJET : MEASURE_OTHER);
 		}
-		default: return(-1);
+		default: return(MEASURE_OTHER);
 	}
 }
 
@@ -161,6 +170,9 @@ void Measure_Tick_Deltas(void)
 
 			int family = Measure_Family(object);
 			if (family < 0) continue;
+			std::int64_t presnap = Render_Position_Delta(position, object->RenderPrevious);
+			MeasureSinceReport.PreSnapDelta[family] = std::max(MeasureSinceReport.PreSnapDelta[family], presnap);
+			if (presnap > RENDER_INTERP_SNAP_LEPTONS) MeasureSinceReport.ThresholdSnaps[family]++;
 			auto previous = MeasurePrevious.find(object);
 			if (previous == MeasurePrevious.end()) continue;
 
@@ -175,9 +187,19 @@ void Measure_Tick_Deltas(void)
 			MeasureSinceReport.Samples[family]++;
 			ObjectTypeClass const * type = object->Class_Of();
 			char const * name = type != nullptr ? static_cast<char const *>(type->IniName) : "unknown";
+			if (presnap > RENDER_INTERP_SNAP_LEPTONS) {
+				DebugString("InterpSnap: frame=%d rtti=%d type=%s delta=%lld pos=%d,%d,%d previous=%d,%d,%d\n",
+					static_cast<int>(Frame), static_cast<int>(object->RTTI), name, presnap, position.X, position.Y, position.Z,
+					object->RenderPrevious.X, object->RenderPrevious.Y, object->RenderPrevious.Z);
+			}
 			if (lepton > MeasureSinceReport.LeptonDelta[family]) {
 				MeasureSinceReport.LeptonDelta[family] = lepton;
 				MeasureSinceReport.LeptonType[family] = name;
+				if (family == MEASURE_UNIT) {
+					FootClass const * foot = static_cast<FootClass const *>(object);
+					MeasureSinceReport.UnitVeterancy = foot->Veterancy.To_Integer();
+					MeasureSinceReport.UnitFaster = foot->Has_Ability(ABILITY_FASTER);
+				}
 			}
 			if (pixel > MeasureSinceReport.PixelDelta[family]) {
 				MeasureSinceReport.PixelDelta[family] = pixel;
@@ -196,8 +218,11 @@ void Measure_Report(void)
 	for (int family = 0; family < MEASURE_COUNT; family++) {
 		DebugString("Measure:   %-8s samples=%-6d max px/tick=%-4d max lepton/tick=%d px-type=%s lepton-type=%s\n",
 			MeasureFamilyName[family], m.Samples[family], m.PixelDelta[family], m.LeptonDelta[family], m.PixelType[family].c_str(), m.LeptonType[family].c_str());
+		DebugString("Measure:   %-8s pre-snap-leptons=%lld threshold-snaps=%d\n", MeasureFamilyName[family], m.PreSnapDelta[family], m.ThresholdSnaps[family]);
 	}
+	DebugString("Measure:   unit-max veterancy=%d faster=%d veteran-speed-bonus=%.3f\n", m.UnitVeterancy, m.UnitFaster, Rule->VeteranSpeed);
 	MeasureSinceReport = MeasureMaxima();
+	Report_Render_Offsets();
 }
 
 }
@@ -461,8 +486,10 @@ bool Main_Loop(void)
 	/*
 	**	AI logic operations are performed here.
 	*/
+	Sim_Tick_Advance();
 	Logic.AI();
 	Measure_Tick_Deltas();
+	Sim_Tick_End();
 
 	/*
 	**	Manage the inter-player message list.  If Manage() returns true, it means

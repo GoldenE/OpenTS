@@ -77,6 +77,7 @@ void MapPreviewClass::Blit_Preview(HWND window)
 		Rect framerect(winrect.left, winrect.top, winrect.right - winrect.left, winrect.bottom - winrect.top);
 		Rect destrect;
 		Rect srcrect = SurfacePtr->Get_Rect();
+		if (srcrect.Width <= 0 || srcrect.Height <= 0 || framerect.Width <= 0 || framerect.Height <= 0) return;
 		int scale = std::min(1000 * framerect.Width / srcrect.Width, 1000 * framerect.Height / srcrect.Height);
 
 		destrect.X = framerect.X + framerect.Width / 2 - (scale * srcrect.Width) / 2000;
@@ -311,9 +312,11 @@ bool MapPreviewClass::Read_INI(CCINIClass const & ini)
 
 	if (SurfacePtr != NULL) {
 		delete SurfacePtr;
+		SurfacePtr = NULL;
 	}
 
 	Rect rect = ini.Get_Rect(PREVIEW, "Size", Map.LocalRect);
+	if (rect.Width <= 0 || rect.Height <= 0 || ini.Entry_Count(PREVIEWPACK) == 0) return(false);
 
 	SurfacePtr = new DSurface(rect.Width, rect.Height);
 	SurfacePtr->Fill(0);

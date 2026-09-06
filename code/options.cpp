@@ -132,6 +132,7 @@ OptionsClass::OptionsClass(void) :
 	ScaleMode(VIDEO_SCALE_PIXELART),
 	IntegerScaling(false),
 	VSync(false),
+	SmoothMotion(true),
 	Renderer(0),
 	CursorScale(0),
 	SoundLatency(9),
@@ -397,6 +398,8 @@ void OptionsClass::Load_Settings(void)
 	DebugString("StretchMovies is %s\n", StretchMovies == true ? "ON" : "OFF");
 
 	IntegerScaling = ConfigINI.Get_Bool("Video", "IntegerScaling", IntegerScaling);
+	SmoothMotion = ConfigINI.Get_Bool("Video", "SmoothMotion", SmoothMotion);
+	DebugString("SmoothMotion is %s\n", SmoothMotion ? "ON" : "OFF");
 
 	char scalename[32];
 	ConfigINI.Get_String("Video", "ScaleMode", (char *)Scale_Mode_Name(ScaleMode), scalename, sizeof(scalename));

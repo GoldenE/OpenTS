@@ -1,1 +1,3 @@
 add_subdirectory(logstress)
+add_subdirectory(renderclock)
+add_subdirectory(mapcontracts)

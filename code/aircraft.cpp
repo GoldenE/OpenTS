@@ -3866,7 +3866,7 @@ void AircraftClass::Read_INI(CCINIClass const & ini)
 						cell = Cell(x,y);
 					} else {
 						int c = atoi(strtok(NULL, ","));
-						cell = Cell(c);
+						cell = Cell(c % 128, c / 128);
 					}
 
 					coord = cell;

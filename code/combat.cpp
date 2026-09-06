@@ -729,10 +729,10 @@ void Wide_Area_Damage(Coord const & coord, LEPTON radius, int rawdamage, TechnoC
 			**	then don't process it. This unusual check method ensures that
 			**	damage won't wrap from one side of the map to the other.
 			*/
-			if ((unsigned)xpos > MAP_CELL_W) {
+			if ((unsigned)xpos >= MAP_CELL_W) {
 				continue;
 			}
-			if ((unsigned)ypos > MAP_CELL_H) {
+			if ((unsigned)ypos >= MAP_CELL_H) {
 				continue;
 			}
 			Cell tcell = Cell(xpos, ypos);
