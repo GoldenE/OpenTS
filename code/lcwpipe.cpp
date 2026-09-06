@@ -38,6 +38,7 @@
 #include "lcwpipe.h"
 
 #include "lcw.h"
+#include "lcwstream.h"
 
 #include <cassert>
 #include <cstring>
@@ -65,13 +66,14 @@ LCWPipe::LCWPipe(CompControl control, int blocksize) :
 		Counter(0),
 		Buffer(NULL),
 		Buffer2(NULL),
-		BlockSize(blocksize)
+		BlockSize(blocksize),
+		ReadingHeader(true),
+		Failed(false)
 {
-	int margin = BlockSize/128+1;
-	SafetyMargin = margin < 128 ? 128 : margin;
+	SafetyMargin = LCW_Stream_Margin(BlockSize, control == COMPRESS);
 	Buffer = new char[BlockSize+SafetyMargin];
 	Buffer2 = new char[BlockSize+SafetyMargin];
-	BlockHeader.CompCount = 0xFFFF;
+	BlockHeader.CompCount = 0;
 }
 
 
@@ -120,6 +122,7 @@ LCWPipe::~LCWPipe(void)
  *=============================================================================================*/
 int LCWPipe::Put(void const * source, int slen)
 {
+	if (Failed) return 0;
 	if (source == NULL || slen < 1) {
 		return(BASECLASS::Put(source, slen));
 	}
@@ -140,7 +143,7 @@ int LCWPipe::Put(void const * source, int slen)
 			**	When a whole block header has been accumulated, only then will the regular
 			**	data processing begin for the block.
 			*/
-			if (BlockHeader.CompCount == 0xFFFF) {
+			if (ReadingHeader) {
 				int len = ((unsigned)slen < (sizeof(BlockHeader)-Counter)) ? slen : (sizeof(BlockHeader)-Counter);
 				memmove(&Buffer[Counter], source, len);
 				source = ((char *)source) + len;
@@ -153,6 +156,11 @@ int LCWPipe::Put(void const * source, int slen)
 				if (Counter == sizeof(BlockHeader)) {
 					memmove(&BlockHeader, Buffer, sizeof(BlockHeader));
 					Counter = 0;
+					if (BlockHeader.CompCount == 0 || BlockHeader.CompCount > BlockSize + SafetyMargin || BlockHeader.UncompCount > BlockSize) {
+						Failed = true;
+						return total;
+					}
+					ReadingHeader = false;
 				}
 			}
 
@@ -176,7 +184,7 @@ int LCWPipe::Put(void const * source, int slen)
 					LCW_Uncomp(Buffer, Buffer2);
 					total += BASECLASS::Put(Buffer2, BlockHeader.UncompCount);
 					Counter = 0;
-					BlockHeader.CompCount = 0xFFFF;
+					ReadingHeader = true;
 				}
 			}
 		}
@@ -256,6 +264,7 @@ int LCWPipe::Put(void const * source, int slen)
  *=============================================================================================*/
 int LCWPipe::Flush(void)
 {
+	if (Failed) return 0;
 	assert(Buffer != NULL);
 
 	int total = 0;
@@ -271,7 +280,7 @@ int LCWPipe::Flush(void)
 			**	this means the data has been truncated. Just dump the data through
 			**	as if were already decompressed.
 			*/
-			if (BlockHeader.CompCount == 0xFFFF) {
+			if (ReadingHeader) {
 				total += BASECLASS::Put(Buffer, Counter);
 				Counter = 0;
 			}
@@ -286,7 +295,7 @@ int LCWPipe::Flush(void)
 				total += BASECLASS::Put(&BlockHeader, sizeof(BlockHeader));
 				total += BASECLASS::Put(Buffer, Counter);
 				Counter = 0;
-				BlockHeader.CompCount = 0xFFFF;
+				ReadingHeader = true;
 			}
 
 		} else {

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.23)
 
-project(OpenTS VERSION 0.1.0 LANGUAGES C CXX ASM_MASM)
+project(OpenTS VERSION 0.1.0 LANGUAGES C CXX)
 
 # A SemVer prerelease label, which project() cannot carry because it takes numbers only. Set it
 # to "beta1" and the version reads 0.1.0-beta1; leave it empty outside a prerelease series. The
@@ -17,6 +17,11 @@ endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+option(OPENTS_POINTER_DIAGNOSTICS "Reject pointer truncation diagnostics" ON)
+if(OPENTS_POINTER_DIAGNOSTICS)
+    add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/we4302> $<$<COMPILE_LANGUAGE:C,CXX>:/we4311> $<$<COMPILE_LANGUAGE:C,CXX>:/we4312>)
+endif()
 
 set(TS_RUN_DIR "${CMAKE_SOURCE_DIR}/Run" CACHE PATH "Tiberian Sun run directory")
 

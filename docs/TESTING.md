@@ -22,8 +22,7 @@ The dump holds the last 256 frame CRCs and a per-house listing of every object's
 position, facing, and targets. Replaying a fixed recording on two builds and
 comparing the dumps names the first frame at which the simulations diverged.
 
-Both switches exist only in Debug builds. Playback skips movies and needs no
-input, so it runs minimized in the background.
+Both switches exist only in Debug builds. Playback skips movies and replays recorded input, but focus handling can wait for the window or recapture the mouse. Run it only when the desktop is available.
 
 ### Golden set
 
@@ -86,6 +85,36 @@ clicks at logical game pixels, key presses, dialog buttons by caption, and
 dialog trackbars by control id. Import it and read `Get-Help Start-OpenTS`.
 
 Menu and tactical hit tests read the system cursor, so a click moves the real mouse. Focus-loss handling also waits for focus during both campaign and skirmish playback, and restoring focus can recapture the mouse. Run recording and replay sessions only when the desktop is available; a minimized launch is not a guarantee of background-safe execution.
+
+## Isolated local LAN clients
+
+Debug builds support an explicit local-only developer mode through `OPENTS_DEBUG_LAN_PORTS=<local>,<peer>`. Both ports must be distinct decimal numbers from 1024 through 65535; whitespace, missing values, and malformed values stop startup. With the variable absent, startup mutexes and networking retain their normal behavior. Release builds ignore the variable.
+
+The LAN UDP transport binds only `127.0.0.1`, sends discovery and game packets only to the configured peer endpoint, and rejects other source endpoints. It preserves the ordinary LAN lobby, packet framing, version negotiation, and game queues. Each local port receives its own application/autoplay mutex names. It does not enable adapter broadcasts or change Windows interfaces or firewall settings. This transport restriction is not a sandbox for unrelated WOL COM or TCP services; use the LAN menu for this test.
+
+Use two separate, locally populated runtime directories with matching game data and Debug binaries. The process changes its working directory to its executable directory, so separate executables also isolate `SUN.INI`, logs, saves, and recordings. Set distinct player names in the LAN lobby. Launch the two clients from separate developer PowerShell sessions when the desktop is available:
+
+```powershell
+$env:OPENTS_DEBUG_LAN_PORTS = '45001,45002'
+& 'C:\path\to\peer-a\GameD.exe' -WIN
+```
+
+```powershell
+$env:OPENTS_DEBUG_LAN_PORTS = '45002,45001'
+& 'C:\path\to\peer-b\GameD.exe' -WIN
+```
+
+Unset the variable with `$env:OPENTS_DEBUG_LAN_PORTS = $null` before an ordinary launch. These are developer QA commands requiring desktop control; they are not an automated background-safe test.
+
+Acceptance uses two x64 clients to join and play through the real lobby, then a Win32/x64 pair to verify live rejection. Retain both debug logs and captures under `baseline/`. The host compares the architecture-stamped build identity before version-range negotiation, so an incompatible pair can report a general game mismatch. A successful local session establishes the real handshake and simulation path over loopback; it does not establish physical-LAN broadcast discovery or router behavior. `LocalLANTest` verifies the opt-in parser, unchanged default mutex names, instance separation, and exact self/peer endpoint classification. `LocalLANTransportTest` executes production LAN configuration, socket setup, send, and receive function bodies against socket substitutes to check binding, discovery destinations, tunnel rejection, and unchanged default behavior. Neither automated test opens sockets.
+
+## Movie audio diagnostics
+
+Set `OPENTS_VQA_AUDIO_TRACE=1` for a Debug or Release launch to record bounded VQA audio diagnostics in the game log. This reports DirectSound buffer creation, locking, playback, volume-setting results and volume readback, plus decoded and submitted PCM summaries. It does not change volume, record raw audio, or inspect other applications.
+
+Each process emits at most 24 DirectSound operation records and eight PCM summaries for each of the decoded and submitted phases. A scan reads at most 16 KiB of the supplied data and reports sample count, format, extrema, and nonzero count. The first seven fills are recorded; if they are silent, the final record is reserved for the first later nonzero fill. Clear the variable before an ordinary launch. `VQAAudioTraceTest` checks the enabled and disabled behavior, sample interpretation, scan limit, and record budgets.
+
+A nonzero decoded buffer establishes decoder output, and a successful DirectSound call establishes API acceptance. Neither alone establishes audible output. Correlate the movie timeline with a meter attributed to the game process or a listening check, and keep an unavailable audio-output observation explicit.
 
 ## Play-through checklist
 

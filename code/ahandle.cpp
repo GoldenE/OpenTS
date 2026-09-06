@@ -21,6 +21,78 @@
 #include "vqaplayp.h"
 
 #include <cassert>
+#include <atomic>
+#include <climits>
+#include <cstdlib>
+#include <cstring>
+
+namespace {
+bool Audio_Trace_Enabled()
+{
+	static bool const enabled = [] {
+		char const * value = std::getenv("OPENTS_VQA_AUDIO_TRACE");
+		return value != nullptr && std::strcmp(value, "1") == 0;
+	}();
+	return enabled;
+}
+
+bool Audio_Trace_Operation()
+{
+	static std::atomic<unsigned> count{0};
+	if (!Audio_Trace_Enabled() || count.load(std::memory_order_relaxed) >= 24) return false;
+	return count.fetch_add(1, std::memory_order_relaxed) < 24;
+}
+
+void Trace_Audio_Result(char const * operation, HRESULT result, Ahandle const * audio, unsigned offset = 0, unsigned bytes = 0)
+{
+	if (!Audio_Trace_Operation()) return;
+	DebugString("VQA audio trace %s: hr=%08lX rate=%u channels=%u bits=%u offset=%u bytes=%u\n", operation, static_cast<unsigned long>(result),
+		static_cast<unsigned>(audio->SampleRate), static_cast<unsigned>(audio->Channels), static_cast<unsigned>(audio->BitsPerSample), offset, bytes);
+}
+
+void Trace_Audio_PCM(bool submitted, Ahandle const * audio, void const * buffer, unsigned bytes)
+{
+	if (!Audio_Trace_Enabled() || buffer == nullptr) return;
+	static std::atomic<unsigned> decoded_count{0};
+	static std::atomic<unsigned> submitted_count{0};
+	static std::atomic<unsigned long long> decoded_fills{0};
+	static std::atomic<unsigned long long> submitted_fills{0};
+	static std::atomic<bool> decoded_nonzero{false};
+	static std::atomic<bool> submitted_nonzero{false};
+	auto & count = submitted ? submitted_count : decoded_count;
+	auto & fills = submitted ? submitted_fills : decoded_fills;
+	auto & seen_nonzero = submitted ? submitted_nonzero : decoded_nonzero;
+	if (count.load(std::memory_order_relaxed) >= 8) return;
+	unsigned long long fill = fills.fetch_add(1, std::memory_order_relaxed);
+	unsigned scan_bytes = bytes < 16384 ? bytes : 16384;
+	unsigned sample_bytes = audio->BitsPerSample == 16 ? 2 : audio->BitsPerSample == 8 ? 1 : 0;
+	unsigned samples = sample_bytes ? scan_bytes / sample_bytes : 0;
+	auto const * source = static_cast<unsigned char const *>(buffer);
+	int minimum = samples ? INT_MAX : 0;
+	int maximum = samples ? INT_MIN : 0;
+	unsigned nonzero = 0;
+	for (unsigned sample = 0; sample < samples; ++sample) {
+		int value;
+		if (sample_bytes == 2) {
+			value = source[sample * 2] | (source[sample * 2 + 1] << 8);
+			if (value >= 32768) value -= 65536;
+		} else {
+			value = static_cast<int>(source[sample]) - 128;
+		}
+		if (value < minimum) minimum = value;
+		if (value > maximum) maximum = value;
+		if (value != 0) ++nonzero;
+	}
+	// Reserve the last record for actual signal when the opening buffers are silent.
+	if (count.load(std::memory_order_relaxed) >= 7 && nonzero == 0 && !seen_nonzero.load(std::memory_order_relaxed)) return;
+	unsigned index = count.fetch_add(1, std::memory_order_relaxed);
+	if (index >= 8) return;
+	if (nonzero != 0) seen_nonzero.store(true, std::memory_order_relaxed);
+	DebugString("VQA audio trace %s PCM[%u]: fill=%llu bytes=%u scanned=%u samples=%u bits=%u channels=%u min=%d max=%d nonzero=%u\n",
+		submitted ? "submitted" : "decoded", index, fill, bytes, samples * sample_bytes, samples, static_cast<unsigned>(audio->BitsPerSample),
+		static_cast<unsigned>(audio->Channels), minimum, maximum, nonzero);
+}
+}
 
 /// use of this is a bug..
 #ifndef DSBCAPS_GETCURRENTPOSITION2
@@ -46,7 +118,7 @@ long __cdecl Play_Audio_Handler(VQAHandleP *vqap);
 long __cdecl Pause_Audio_Handler(VQAHandleP *vqap);
 long __cdecl Resume_Audio_Handler(VQAHandleP *vqap);
 long __cdecl Load_Audio_Handler(VQAHandleP *vqap, void *buffer, long nbytes);
-void CALLBACK AudioCallback(UINT uTimerID, UINT, DWORD dwUser, DWORD, DWORD);
+void CALLBACK AudioCallback(UINT uTimerID, UINT, DWORD_PTR dwUser, DWORD_PTR, DWORD_PTR);
 _STATIC unsigned long Get_Playback_Position(VQAHandle *vqa, Ahandle *handle, VQAConfig *config);
 
 _STATIC BOOL Move_HMI_Audio_Block_To_Direct_Sound_Buffer(VQAHandleP *vqap);
@@ -207,7 +279,7 @@ long __cdecl Open_Audio_Handler(VQAHandleP *vqap, AhandleInitParams *params, lon
 		index++;
 	}
 
-	if (index != 1 && b == 16) {
+	if (index < Ahandle::MAX_HANDLES && params != NULL && b == static_cast<long>(sizeof(AhandleInitParams))) {
 
 		VQAConfig *config = &vqap->Config;
 
@@ -285,7 +357,7 @@ long __cdecl Open_Audio_Handler(VQAHandleP *vqap, AhandleInitParams *params, lon
 		if (timeBeginPeriod(1000/VQA_TIMETICKS) != TIMERR_NOCANDO) {
 			DebugString("Creating VQ audio timer thread\n");
 			// Set orf 60hz timer
-			handle->TimerHandle = timeSetEvent ( 1000/VQA_TIMETICKS , 1 , AudioCallback , (DWORD)vqap , TIME_PERIODIC);
+			handle->TimerHandle = timeSetEvent ( 1000/VQA_TIMETICKS , 1 , AudioCallback , reinterpret_cast<DWORD_PTR>(vqap) , TIME_PERIODIC);
 			DebugString("VQ audio handler opened OK\n");
 			if (handle->TimerHandle != 0) {
 				return(VQAERR_NONE);
@@ -394,8 +466,9 @@ long __cdecl Start_Audio_Handler(VQAHandleP *vqap)
 	**	Create the secondary sound buffer object
 	*/
 	Audio.Lock_Mutex();
-	Direct_Sound_Object()->CreateSoundBuffer (&audio->BufferDesc , &audio->SecondaryBufferPtr , NULL);
+	HRESULT create_result = Direct_Sound_Object()->CreateSoundBuffer (&audio->BufferDesc , &audio->SecondaryBufferPtr , NULL);
 	Audio.Unlock_Mutex();
+	Trace_Audio_Result("CreateSoundBuffer", create_result, audio, 0, audio->SecondaryBufferSize);
 
 	if (audio->SecondaryBufferPtr == NULL) {
 		LeaveCriticalSection(&audio->CriticalSection);
@@ -413,9 +486,17 @@ long __cdecl Start_Audio_Handler(VQAHandleP *vqap)
 	/*
 	**	Set the volume
 	*/
-	audio->SecondaryBufferPtr->SetVolume(Convert_HMI_To_Direct_Sound_Volume(audio->Volume & 255));
+	LONG requested_volume = Convert_HMI_To_Direct_Sound_Volume(audio->Volume & 255);
+	HRESULT volume_result = audio->SecondaryBufferPtr->SetVolume(requested_volume);
+	if (Audio_Trace_Operation()) {
+		LONG actual_volume = 0;
+		HRESULT volume_read_result = audio->SecondaryBufferPtr->GetVolume(&actual_volume);
+		DebugString("VQA audio trace volume: input=%u requested=%ld set_hr=%08lX actual=%ld get_hr=%08lX\n", audio->Volume & 255,
+			requested_volume, static_cast<unsigned long>(volume_result), actual_volume, static_cast<unsigned long>(volume_read_result));
+	}
 
 	HRESULT return_code = audio->SecondaryBufferPtr->Play(0, 0, DSBPLAY_LOOPING);
+	Trace_Audio_Result("Play", return_code, audio);
 	LeaveCriticalSection(&audio->CriticalSection);
 	return(return_code == DS_OK ? VQAERR_NONE : VQAERR_AUDIO);
 }
@@ -432,6 +513,7 @@ long __cdecl Load_Audio_Handler(VQAHandleP *vqap, void *buffer, long nbytes)
 			return(VQAERR_AUDIO);
 		}
 		int readindex = handle->AudioBufReadIndex;
+		if (nbytes > 0) Trace_Audio_PCM(false, handle, buffer, static_cast<unsigned>(nbytes));
 		handle->AudioBuf[readindex] = buffer;
 		handle->AudioBufSize[readindex] = nbytes;
 		handle->AudioBufInUse[readindex] = TRUE;
@@ -477,6 +559,7 @@ long __cdecl Play_Audio_Handler(VQAHandleP *vqap)
 	EnterCriticalSection(&handle->CriticalSection);
 
 	rc = handle->SecondaryBufferPtr->Play(0, 0, DSBPLAY_LOOPING);
+	Trace_Audio_Result("Resume", rc, handle);
 	if (rc == S_OK) {
 		handle->PauseAdjust = Simple_Timer_Callback_Audio_Handler(NULL) - handle->LastTimerTick;
 		DebugString("Ahandle: PauseAdjust %ld\n", handle->PauseAdjust);
@@ -535,7 +618,7 @@ long __cdecl Stop_Audio_Handler(VQAHandleP *vqap)
 *     NONE
 *
 ****************************************************************************/
-void CALLBACK AudioCallback ( UINT uTimerID, UINT, DWORD dwUser, DWORD, DWORD )
+void CALLBACK AudioCallback ( UINT uTimerID, UINT, DWORD_PTR dwUser, DWORD_PTR, DWORD_PTR )
 {
 	Ahandle  	*audio;
 	DWORD			play_cursor;		//Position that direct sound is reading from
@@ -616,7 +699,8 @@ void CALLBACK AudioCallback ( UINT uTimerID, UINT, DWORD dwUser, DWORD, DWORD )
 		**	Start the buffer playing again if we had to stop it
 		*/
 		if (buffer_stopped == true) {
-			audio->SecondaryBufferPtr->Play(0,0,DSBPLAY_LOOPING);
+			HRESULT play_result = audio->SecondaryBufferPtr->Play(0,0,DSBPLAY_LOOPING);
+			Trace_Audio_Result("TimerResume", play_result, audio);
 		}
 	}
 	LeaveCriticalSection(&audio->CriticalSection);
@@ -675,6 +759,7 @@ BOOL Move_HMI_Audio_Block_To_Direct_Sound_Buffer(VQAHandleP *vqap)
 																	&lock_length2,
 																	0 );
 
+	Trace_Audio_Result("Lock", return_code, audio, next_fill_pos, config->HMIBufSize);
 	if (return_code!=DS_OK) return(FALSE);
 
 	int index = audio->AudioBufReadIndex;
@@ -700,6 +785,8 @@ BOOL Move_HMI_Audio_Block_To_Direct_Sound_Buffer(VQAHandleP *vqap)
 	/*
 	**	Unlock the direct sound buffer
 	*/
+	unsigned copied_first = audio->AudioBufSize[index] < lock_length1 ? audio->AudioBufSize[index] : lock_length1;
+	Trace_Audio_PCM(true, audio, play_buffer_ptr1, copied_first);
 	audio->SecondaryBufferPtr->Unlock(play_buffer_ptr1,
 												lock_length1,
 												play_buffer_ptr2,

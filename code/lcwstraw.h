@@ -51,6 +51,7 @@ class LCWStraw : public Straw
 			DECOMPRESS
 		};
 
+		// Invalid sizes throw: compression accepts 1..64510, decompression 1..65535.
 		LCWStraw(CompControl control, int blocksize=1024*8);
 		virtual ~LCWStraw(void) override;
 
@@ -79,11 +80,9 @@ class LCWStraw : public Straw
 		*/
 		int BlockSize;
 
-		/*
-		**	LCW compression requires a safety margin when decompressing over itself. This
-		**	margin is only for the worst case situation (very rare).
-		*/
+		// Capacity for literal expansion, framing, and decoder store padding.
 		int SafetyMargin;
+		bool Failed;
 
 		/*
 		**	Each block has a header of this format.

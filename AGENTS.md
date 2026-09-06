@@ -33,7 +33,7 @@ The archived TibSun reconstruction and original executable are historical
 evidence. Binary matching is not the acceptance criterion for active OpenTS
 development.
 
-Visual Studio 2022 Win32 Debug and Release are the supported build target.
+Visual Studio 2022 Win32 and x64 Debug and Release are the supported build targets.
 A build result is not runtime evidence.
 
 ## Source changes

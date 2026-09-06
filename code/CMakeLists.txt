@@ -1,9 +1,8 @@
 # Limit the generated solution to supported configurations.
 set(CMAKE_CONFIGURATION_TYPES Debug Release CACHE STRING "" FORCE)
 
-# OpenTS currently supports 32-bit (x86) builds only.
-if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
-    message(FATAL_ERROR "OpenTS must be built as 32-bit x86. Reconfigure with -A Win32.")
+if(NOT CMAKE_VS_PLATFORM_NAME MATCHES "^(Win32|x64)$")
+    message(FATAL_ERROR "OpenTS supports Visual Studio Win32 and x64 targets. Reconfigure with -A Win32 or -A x64.")
 endif()
 
 #
@@ -28,7 +27,6 @@ file(GLOB_RECURSE OPENTS_RAW CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/*.hh"
     "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/*.rc"
-    "${CMAKE_CURRENT_SOURCE_DIR}/*.asm"
 
     # Submodules of OpenTS
     "${CMAKE_CURRENT_SOURCE_DIR}/wolapi/*"
@@ -101,42 +99,34 @@ set(OPENTS_COMPILE_OPTIONS
     $<$<CONFIG:Debug>:
 
         # ---------- C++ ----------
-        # /arch:SSE2 -- IEEE-754 single precision, no x87 excess precision.
+        # /arch:SSE2 -- no x87 excess precision on Win32; x64 already requires SSE2.
         # /fp:precise -- no reassociation of the engine's accumulations.
         $<$<COMPILE_LANGUAGE:CXX>:
-            /Zi /Od /RTC1 /GR /MP /EHsc /Oy- /MTd /Zc:__cplusplus /arch:SSE2 /fp:precise
+            /Zi /Od /RTC1 /GR /MP /EHsc /Oy- /MTd /Zc:__cplusplus $<$<EQUAL:${CMAKE_SIZEOF_VOID_P},4>:/arch:SSE2> /fp:precise
         >
 
         # ---------- C ----------
         $<$<COMPILE_LANGUAGE:C>:
-            /Zi /Od /RTC1 /MP /Oy- /arch:SSE2 /fp:precise
+            /Zi /Od /RTC1 /MP /Oy- $<$<EQUAL:${CMAKE_SIZEOF_VOID_P},4>:/arch:SSE2> /fp:precise
         >
 
-        # ---------- MASM ----------
-        $<$<COMPILE_LANGUAGE:ASM_MASM>:
-            /Zi /c /coff /Cx /safeseh
-        >
     >
 
     # ================= RELEASE =================
     $<$<CONFIG:Release>:
 
         # ---------- C++ ----------
-        # /arch:SSE2 -- IEEE-754 single precision, no x87 excess precision.
+        # /arch:SSE2 -- no x87 excess precision on Win32; x64 already requires SSE2.
         # /fp:precise -- no reassociation of the engine's accumulations.
         $<$<COMPILE_LANGUAGE:CXX>:
-            /Zi /O2 /GF /GR /MP /EHsc /MT /Zc:__cplusplus /arch:SSE2 /fp:precise
+            /Zi /O2 /GF /GR /MP /EHsc /MT /Zc:__cplusplus $<$<EQUAL:${CMAKE_SIZEOF_VOID_P},4>:/arch:SSE2> /fp:precise
         >
 
         # ---------- C ----------
         $<$<COMPILE_LANGUAGE:C>:
-            /Zi /O2 /GF /MP /arch:SSE2 /fp:precise
+            /Zi /O2 /GF /MP $<$<EQUAL:${CMAKE_SIZEOF_VOID_P},4>:/arch:SSE2> /fp:precise
         >
 
-        # ---------- MASM ----------
-        $<$<COMPILE_LANGUAGE:ASM_MASM>:
-            /Zi /c /coff /Cx /safeseh
-        >
     >
 )
 
@@ -238,25 +228,6 @@ endif()
 
 #
 # ---------------------------------------------------------
-# MASM assembly support
-# ---------------------------------------------------------
-#
-message(STATUS "${PROJECT_NAME}: Adding MASM support...")
-
-enable_language(ASM_MASM)
-
-# All .asm files compile automatically using ML.EXE with appropriate flags.
-foreach(f ${OPENTS_SRC})
-    if(f MATCHES "\\.asm$")
-        set_source_files_properties(${f} PROPERTIES
-            LANGUAGE ASM_MASM
-            COMPILE_FLAGS "-Zi -c -coff -Cx"
-        )
-    endif()
-endforeach()
-
-#
-# ---------------------------------------------------------
 # Visual Studio source groups
 # ---------------------------------------------------------
 #
@@ -280,13 +251,6 @@ endforeach()
 foreach(f ${OPENTS_SRC})
     if(f MATCHES "\\.hh$")
         source_group("Header Files\\Define Header Files" FILES ${f})
-    endif()
-endforeach()
-
-# Assembly Files
-foreach(f ${OPENTS_SRC})
-    if(f MATCHES "\\.asm$")
-        source_group("Assembly Files" FILES ${f})
     endif()
 endforeach()
 

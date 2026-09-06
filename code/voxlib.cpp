@@ -38,38 +38,7 @@ void __cdecl Draw_Voxel_Reverse(VoxelFuncArgumentStruct * state);
 void __cdecl Draw_Voxel_Regular_ZBuffer(VoxelFuncArgumentStruct * state);
 void __cdecl Draw_Voxel_Reverse_ZBuffer(VoxelFuncArgumentStruct * state);
 
-extern "C" {
-void __cdecl Draw_Voxel_Regular_Normals_ASM(VoxelFuncArgumentStruct * state);
-void __cdecl Draw_Voxel_Reverse_Normals_ASM(VoxelFuncArgumentStruct * state);
-void __cdecl Draw_Voxel_Regular_Lighting_Normals_ASM(VoxelFuncArgumentStruct * state);
-void __cdecl Draw_Voxel_Reverse_Lighting_Normals_ASM(VoxelFuncArgumentStruct * state);
-void __cdecl Draw_Voxel_Regular_ASM(VoxelFuncArgumentStruct * state);
-void __cdecl Draw_Voxel_Reverse_ASM(VoxelFuncArgumentStruct * state);
-void __cdecl Draw_Voxel_UNUSED1_ASM(VoxelFuncArgumentStruct * state);
-void __cdecl Draw_Voxel_UNUSED2_ASM(VoxelFuncArgumentStruct * state);
-}
-
-VoxelFuncPtr VoxelDrawFunctions[32] = {
-
-	/// Assembly routines
-	&Draw_Voxel_Regular_Normals_ASM,
-	&Draw_Voxel_Reverse_Normals_ASM,
-	&Draw_Voxel_Regular_Normals_ZBuffer,
-	&Draw_Voxel_Reverse_Normals_ZBuffer,
-	&Draw_Voxel_Regular_Lighting_Normals_ASM,
-	&Draw_Voxel_Reverse_Lighting_Normals_ASM,
-	&Draw_Voxel_Regular_Normals_ZBuffer_Lighting,
-	&Draw_Voxel_Reverse_Normals_ZBuffer_Lighting,
-	&Draw_Voxel_Regular_ASM,
-	&Draw_Voxel_Reverse_ASM,
-	&Draw_Voxel_Regular_ZBuffer,
-	&Draw_Voxel_Reverse_ZBuffer,
-	&Draw_Voxel_Regular_ASM,
-	&Draw_Voxel_Reverse_ASM,
-	&Draw_Voxel_Regular_ZBuffer,
-	&Draw_Voxel_Reverse_ZBuffer,
-
-	/// The same set again, with the C++ drawers in place of the assembly ones.
+VoxelFuncPtr VoxelDrawFunctions[16] = {
 	&Draw_Voxel_Regular_Normals,
 	&Draw_Voxel_Reverse_Normals,
 	&Draw_Voxel_Regular_Normals_ZBuffer,
@@ -1054,6 +1023,75 @@ inline void Fill_Delta_Table2(VoxelFuncArgumentStruct * state)
 }
 
 
+static unsigned int Pack_Voxel_Position(Vector3i16 const & position)
+{
+	return static_cast<unsigned short>(position.I) | (static_cast<unsigned int>(static_cast<unsigned short>(position.J)) << 16);
+}
+
+
+static void Draw_Voxel_Portable(VoxelFuncArgumentStruct * state, bool reverse, bool normals, bool lighting)
+{
+	if (state->XSize == 0 || state->YSize == 0 || state->ZSize == 0) return;
+	unsigned int const step_x = Pack_Voxel_Position(state->TransformMatrix[1]);
+	unsigned int const step_y = Pack_Voxel_Position(state->TransformMatrix[2]);
+	unsigned int const step_z = Pack_Voxel_Position(state->TransformMatrix[3]);
+	unsigned int row_position = Pack_Voxel_Position(state->TransformMatrix[0]);
+	unsigned int const delta_count = normals ? state->ZSize : 255 - state->ZSize;
+	for (unsigned int z = 0; z < delta_count; ++z) {
+		VoxelPixelDeltaTable[z][0] = static_cast<short>(z * state->TransformMatrix[3].I);
+		VoxelPixelDeltaTable[z][1] = static_cast<short>(z * state->TransformMatrix[3].J);
+	}
+	auto const * offsets = reinterpret_cast<unsigned int const *>(reverse ? state->EndOffset : state->StartOffset);
+	for (unsigned int y = 0; y < state->YSize; ++y) {
+		int const row_index = state->StartIndex;
+		unsigned int column_position = row_position;
+		for (unsigned int x = 0; x < state->XSize; ++x) {
+			state->TransformMatrix[0].I = static_cast<short>(column_position);
+			state->TransformMatrix[0].J = static_cast<short>(column_position >> 16);
+			unsigned int const offset = offsets[state->StartIndex];
+			if ((offset & 0x80000000u) == 0) {
+				auto * pointer = state->DataOffset + offset;
+				unsigned int position = column_position;
+				unsigned int remaining = state->ZSize;
+				auto skip = [&](unsigned delta) {
+					unsigned int packed_delta = static_cast<unsigned short>(VoxelPixelDeltaTable[delta][0]) | (static_cast<unsigned int>(static_cast<unsigned short>(VoxelPixelDeltaTable[delta][1])) << 16);
+					position += packed_delta;
+					remaining -= delta;
+				};
+				while (remaining != 0) {
+					if (!reverse) skip(*pointer++);
+					unsigned int count = *pointer;
+					pointer += reverse ? -1 : 1;
+					remaining -= count;
+					while (count-- != 0) {
+						unsigned char color;
+						unsigned char normal = 0;
+						if (reverse) {
+							if (normals) normal = *pointer--;
+							color = *pointer--;
+						} else {
+							color = *pointer++;
+							if (normals) normal = *pointer++;
+						}
+						if (lighting) color = VoxelPaletteTranslateTable[VoxelNormalTranslateTable[normal]][color];
+						unsigned int const index = ((position >> 16) & 0xff00) | ((position >> 8) & 0xff);
+						VoxelDrawBuffer[index] = color;
+						if (normals) VoxelDrawBuffer[index + 1] = color;
+						position += step_z;
+					}
+					pointer += reverse ? -1 : 1;
+					if (reverse) skip(*pointer--);
+				}
+			}
+			column_position += step_x;
+			state->StartIndex += state->StrideX;
+		}
+		row_position += step_y;
+		state->StartIndex = row_index + state->StrideY;
+	}
+}
+
+
 /// <summary>
 /// Draws a voxel object without shading it.
 /// This is the low level drawer for the forward orientations, used when the draw system
@@ -1064,90 +1102,7 @@ inline void Fill_Delta_Table2(VoxelFuncArgumentStruct * state)
 /// <param name="state">The projection, stride and voxel data setup for this object.</param>
 void __cdecl Draw_Voxel_Regular_Normals(VoxelFuncArgumentStruct * state)
 {
-	/*
-	 * Precompute screen projection deltas for every Z step
-	 */
-	Fill_Delta_Table2(state);
-
-	/// Set starting 2D projection position
-	unsigned short pixel_x = state->TransformMatrix[0].I;
-	unsigned short pixel_y = state->TransformMatrix[0].J;
-
-	/// Iterate over voxel Y slices (rows)
-	for (unsigned int y = 0; y < state->YSize; y++) {
-		unsigned int base_index = state->StartIndex;
-		unsigned short row_start_x = pixel_x;
-		unsigned short row_start_y = pixel_y;
-
-		/// Iterate over voxel X columns (within the current Y row)
-		for (unsigned int x = 0; x < state->XSize; x++) {
-			unsigned int data_offset = ((unsigned int *)state->StartOffset)[state->StartIndex];
-			unsigned short column_start_x = pixel_x;
-			unsigned short column_start_y = pixel_y;
-
-			if (data_offset != UINT_MAX) {
-				unsigned char * ptr = state->DataOffset + data_offset;
-				unsigned int remaining = state->ZSize;
-
-				/// Parse voxel run-length encoded data along Z axis
-				while (remaining) {
-
-					/*
-					 * Byte 0 - pixel delta
-					 */
-					unsigned char delta = *ptr;
-					ptr++;
-
-					pixel_x += VoxelPixelDeltaTable[delta][0];
-					pixel_y += VoxelPixelDeltaTable[delta][1];
-
-					remaining -= delta;
-
-					// Byte 1 - run length(forward)
-					unsigned int run_length = *ptr;
-					ptr++;
-
-					if (run_length) {
-						remaining -= run_length;
-						while (run_length) {
-
-							/*
-							 * Byte 2 - color index
-							 */
-							unsigned char color_index = *ptr;
-							ptr++;
-
-							/*
-							 * Byte 3 - normal index
-							 */
-							ptr++;
-
-							/// Compute buffer index and write color
-							unsigned int buffer_index = (pixel_x >> 8) | (pixel_y & 0xFF00);
-							VoxelDrawBuffer[buffer_index] = color_index;
-
-							pixel_x += state->TransformMatrix[3].I;
-							pixel_y += state->TransformMatrix[3].J;
-							run_length--;
-						}
-					}
-
-					// Byte 4 - run length(backward)
-					ptr++;
-				}
-			}
-
-			/// Advance to next voxel in X direction
-			pixel_x = column_start_x + state->TransformMatrix[1].I;
-			pixel_y = column_start_y + state->TransformMatrix[1].J;
-			state->StartIndex = state->StrideX + state->StartIndex;
-		}
-
-		/// Advance to next voxel row (Y direction)
-		pixel_x = row_start_x + state->TransformMatrix[2].I;
-		pixel_y = row_start_y + state->TransformMatrix[2].J;
-		state->StartIndex = state->StrideY + base_index;
-	}
+	Draw_Voxel_Portable(state, false, true, false);
 }
 
 
@@ -1161,90 +1116,7 @@ void __cdecl Draw_Voxel_Regular_Normals(VoxelFuncArgumentStruct * state)
 /// <param name="state">The projection, stride and voxel data setup for this object.</param>
 void __cdecl Draw_Voxel_Reverse_Normals(VoxelFuncArgumentStruct * state)
 {
-	/*
-	 * Precompute screen projection deltas for every Z step
-	 */
-	Fill_Delta_Table1(state);
-
-	/// Set starting 2D projection position
-	unsigned short pixel_x = state->TransformMatrix[0].I;
-	unsigned short pixel_y = state->TransformMatrix[0].J;
-
-	/// Iterate over voxel Y slices (rows)
-	for (unsigned int y = 0; y < state->YSize; y++) {
-		unsigned int base_index = state->StartIndex;
-		unsigned short row_start_x = pixel_x;
-		unsigned short row_start_y = pixel_y;
-
-		/// Iterate over voxel X columns (within the current Y row)
-		for (unsigned int x = 0; x < state->XSize; x++) {
-			unsigned int data_offset = ((unsigned int *)state->EndOffset)[state->StartIndex];
-			unsigned short column_start_x = pixel_x;
-			unsigned short column_start_y = pixel_y;
-
-			if (data_offset != UINT_MAX) {
-				unsigned char * ptr = state->DataOffset + data_offset;
-				unsigned int remaining = state->ZSize;
-
-				/// Parse voxel run-length encoded data along Z axis
-				while (remaining) {
-
-					// Byte 4 - run length(backward)
-					unsigned int run_length = *ptr;
-					ptr--;
-
-					if (run_length) {
-						remaining -= run_length;
-						while (run_length) {
-
-							/*
-							 * Byte 3 - normal index
-							 */
-							ptr--;
-
-							/*
-							 * Byte 2 - color index
-							 */
-							unsigned char color_index = *ptr;
-							ptr--;
-
-							/// Compute buffer index and write color
-							unsigned int buffer_index = (pixel_x >> 8) | (pixel_y & 0xFF00);
-							VoxelDrawBuffer[buffer_index] = color_index;
-
-							pixel_x += state->TransformMatrix[3].I;
-							pixel_y += state->TransformMatrix[3].J;
-							run_length--;
-						}
-					}
-
-					// Byte 1 - run length(forward)
-					ptr--;
-
-					/*
-					 * Byte 0 - pixel delta
-					 */
-					unsigned char delta = *ptr;
-					ptr--;
-
-					pixel_x += VoxelPixelDeltaTable[delta][0];
-					pixel_y += VoxelPixelDeltaTable[delta][1];
-
-					remaining -= delta;
-				}
-			}
-
-			/// Advance to next voxel in X direction
-			pixel_x = column_start_x + state->TransformMatrix[1].I;
-			pixel_y = column_start_y + state->TransformMatrix[1].J;
-			state->StartIndex = state->StrideX + state->StartIndex;
-		}
-
-		/// Advance to next voxel row (Y direction)
-		pixel_x = row_start_x + state->TransformMatrix[2].I;
-		pixel_y = row_start_y + state->TransformMatrix[2].J;
-		state->StartIndex = state->StrideY + base_index;
-	}
+	Draw_Voxel_Portable(state, true, true, false);
 }
 
 
@@ -1483,95 +1355,7 @@ void __cdecl Draw_Voxel_Reverse_Normals_ZBuffer(VoxelFuncArgumentStruct * state)
 /// <param name="state">The projection, stride and voxel data setup for this object.</param>
 void __cdecl Draw_Voxel_Regular_Normals_Lighting(VoxelFuncArgumentStruct * state)
 {
-	/*
-	 * Precompute screen projection deltas for every Z step
-	 */
-	Fill_Delta_Table1(state);
-
-	/// Set starting 2D projection position
-	unsigned short pixel_x = state->TransformMatrix[0].I;
-	unsigned short pixel_y = state->TransformMatrix[0].J;
-
-	/// Iterate over voxel Y slices (rows)
-	for (unsigned int y = 0; y < state->YSize; y++) {
-		unsigned int base_index = state->StartIndex;
-		unsigned short row_start_x = pixel_x;
-		unsigned short row_start_y = pixel_y;
-
-		/// Iterate over voxel X columns (within the current Y row)
-		for (unsigned int x = 0; x < state->XSize; x++) {
-			unsigned int data_offset = ((unsigned int *)state->StartOffset)[state->StartIndex];
-			unsigned short column_start_x = pixel_x;
-			unsigned short column_start_y = pixel_y;
-
-			if (data_offset != UINT_MAX) {
-				unsigned char * ptr = state->DataOffset + data_offset;
-				unsigned int remaining = state->ZSize;
-
-				/// Parse voxel run-length encoded data along Z axis
-				while (remaining) {
-
-					/*
-					 * Byte 0 - pixel delta
-					 */
-					unsigned char delta = *ptr;
-					ptr++;
-
-					pixel_x += VoxelPixelDeltaTable[delta][0];
-					pixel_y += VoxelPixelDeltaTable[delta][1];
-
-					remaining -= delta;
-
-					// Byte 1 - run length(forward)
-					unsigned int run_length = *ptr;
-					ptr++;
-
-					if (run_length) {
-						remaining -= run_length;
-						while (run_length) {
-
-							/*
-							 * Byte 2 - color index
-							 */
-							unsigned char color_index = *ptr;
-							ptr++;
-
-							/*
-							 * Byte 3 - normal index
-							 */
-							unsigned char normal_index = *ptr;
-							unsigned char table_index = VoxelNormalTranslateTable[normal_index];
-							ptr++;
-
-							/// Compute buffer index and write color
-							unsigned int buffer_index = (pixel_x >> 8) | (pixel_y & 0xFF00);
-							color_index = VoxelPaletteTranslateTable[table_index][color_index];
-
-							VoxelDrawBuffer[buffer_index] = color_index;
-							VoxelDrawBuffer[buffer_index + 1] = color_index;
-
-							pixel_x += state->TransformMatrix[3].I;
-							pixel_y += state->TransformMatrix[3].J;
-							run_length--;
-						}
-					}
-
-					// Byte 4 - run length(backward)
-					ptr++;
-				}
-			}
-
-			/// Advance to next voxel in X direction
-			pixel_x = column_start_x + state->TransformMatrix[1].I;
-			pixel_y = column_start_y + state->TransformMatrix[1].J;
-			state->StartIndex = state->StrideX + state->StartIndex;
-		}
-
-		/// Advance to next voxel row (Y direction)
-		pixel_x = row_start_x + state->TransformMatrix[2].I;
-		pixel_y = row_start_y + state->TransformMatrix[2].J;
-		state->StartIndex = state->StrideY + base_index;
-	}
+	Draw_Voxel_Portable(state, false, true, true);
 }
 
 
@@ -1585,95 +1369,7 @@ void __cdecl Draw_Voxel_Regular_Normals_Lighting(VoxelFuncArgumentStruct * state
 /// <param name="state">The projection, stride and voxel data setup for this object.</param>
 void __cdecl Draw_Voxel_Reverse_Normals_Lighting(VoxelFuncArgumentStruct * state)
 {
-	/*
-	 * Precompute screen projection deltas for every Z step
-	 */
-	Fill_Delta_Table2(state);
-
-	/// Set starting 2D projection position
-	unsigned short pixel_x = state->TransformMatrix[0].I;
-	unsigned short pixel_y = state->TransformMatrix[0].J;
-
-	/// Iterate over voxel Y slices (rows)
-	for (unsigned int y = 0; y < state->YSize; y++) {
-		unsigned int base_index = state->StartIndex;
-		unsigned short row_start_x = pixel_x;
-		unsigned short row_start_y = pixel_y;
-
-		/// Iterate over voxel X columns (within the current Y row)
-		for (unsigned int x = 0; x < state->XSize; x++) {
-			unsigned int data_offset = ((unsigned int *)state->EndOffset)[state->StartIndex];
-			unsigned short column_start_x = pixel_x;
-			unsigned short column_start_y = pixel_y;
-
-			if (data_offset != UINT_MAX) {
-				unsigned char * ptr = state->DataOffset + data_offset;
-				unsigned int remaining = state->ZSize;
-
-				/// Parse voxel run-length encoded data along Z axis
-				while (remaining) {
-
-					// Byte 4 - run length(backward)
-					unsigned int run_length = *ptr;
-					ptr--;
-
-					if (run_length) {
-						remaining -= run_length;
-						while (run_length) {
-
-							/*
-							 * Byte 3 - normal index
-							 */
-							unsigned char normal_index = *ptr;
-							unsigned char table_index = VoxelNormalTranslateTable[normal_index];
-							ptr--;
-
-							/*
-							 * Byte 2 - color index
-							 */
-							unsigned char color_index = *ptr;
-							ptr--;
-
-							/// Compute buffer index and write color
-							unsigned int buffer_index = (pixel_x >> 8) | (pixel_y & 0xFF00);
-							color_index = VoxelPaletteTranslateTable[table_index][color_index];
-
-							VoxelDrawBuffer[buffer_index] = color_index;
-							VoxelDrawBuffer[buffer_index + 1] = color_index;
-
-							pixel_x += state->TransformMatrix[3].I;
-							pixel_y += state->TransformMatrix[3].J;
-							run_length--;
-						}
-					}
-
-					// Byte 1 - run length(forward)
-					ptr--;
-
-					/*
-					 * Byte 0 - pixel delta
-					 */
-					unsigned char delta = *ptr;
-					ptr--;
-
-					pixel_x += VoxelPixelDeltaTable[delta][0];
-					pixel_y += VoxelPixelDeltaTable[delta][1];
-
-					remaining -= delta;
-				}
-			}
-
-			/// Advance to next voxel in X direction
-			pixel_x = column_start_x + state->TransformMatrix[1].I;
-			pixel_y = column_start_y + state->TransformMatrix[1].J;
-			state->StartIndex = state->StrideX + state->StartIndex;
-		}
-
-		/// Advance to next voxel row (Y direction)
-		pixel_x = row_start_x + state->TransformMatrix[2].I;
-		pixel_y = row_start_y + state->TransformMatrix[2].J;
-		state->StartIndex = state->StrideY + base_index;
-	}
+	Draw_Voxel_Portable(state, true, true, true);
 }
 
 
@@ -1935,85 +1631,7 @@ void __cdecl Draw_Voxel_Reverse_Normals_ZBuffer_Lighting(VoxelFuncArgumentStruct
 /// <param name="state">The projection, stride and voxel data setup for this object.</param>
 void __cdecl Draw_Voxel_Regular(VoxelFuncArgumentStruct * state)
 {
-	/*
-	 * Precompute screen projection deltas for every Z step
-	 */
-	Fill_Delta_Table1(state);
-
-	/// Set starting 2D projection position
-	unsigned short pixel_x = state->TransformMatrix[0].I;
-	unsigned short pixel_y = state->TransformMatrix[0].J;
-
-	/// Iterate over voxel Y slices (rows)
-	for (unsigned int y = 0; y < state->YSize; y++) {
-		unsigned int base_index = state->StartIndex;
-		unsigned short row_start_x = pixel_x;
-		unsigned short row_start_y = pixel_y;
-
-		/// Iterate over voxel X columns (within the current Y row)
-		for (unsigned int x = 0; x < state->XSize; x++) {
-			unsigned int data_offset = ((unsigned int *)state->StartOffset)[state->StartIndex];
-			unsigned short column_start_x = pixel_x;
-			unsigned short column_start_y = pixel_y;
-
-			if (data_offset != UINT_MAX) {
-				unsigned char * ptr = state->DataOffset + data_offset;
-				unsigned int remaining = state->ZSize;
-
-				/// Parse voxel run-length encoded data along Z axis
-				while (remaining) {
-
-					/*
-					 * Byte 0 - pixel delta
-					 */
-					unsigned char delta = *ptr;
-					ptr++;
-
-					pixel_x += VoxelPixelDeltaTable[delta][0];
-					pixel_y += VoxelPixelDeltaTable[delta][1];
-
-					remaining -= delta;
-
-					// Byte 1 - run length(forward)
-					unsigned int run_length = *ptr;
-					ptr++;
-
-					if (run_length) {
-						remaining -= run_length;
-						while (run_length) {
-
-							/*
-							 * Byte 2 - color index
-							 */
-							unsigned char color_index = *ptr;
-							ptr++;
-
-							/// Compute buffer index and write color
-							VoxelDrawBuffer[(pixel_x >> 8) | (pixel_y & 0xFF00)] = color_index;
-							VoxelDrawBuffer[(pixel_x >> 8) | (pixel_y & 0xFF00) + 1] = color_index;
-
-							pixel_x += state->TransformMatrix[3].I;
-							pixel_y += state->TransformMatrix[3].J;
-							run_length--;
-						}
-					}
-
-					// Byte 4 - run length(backward)
-					ptr++;
-				}
-			}
-
-			/// Advance to next voxel in X direction
-			pixel_x = column_start_x + state->TransformMatrix[1].I;
-			pixel_y = column_start_y + state->TransformMatrix[1].J;
-			state->StartIndex = state->StrideX + state->StartIndex;
-		}
-
-		/// Advance to next voxel row (Y direction)
-		pixel_x = row_start_x + state->TransformMatrix[2].I;
-		pixel_y = row_start_y + state->TransformMatrix[2].J;
-		state->StartIndex = state->StrideY + base_index;
-	}
+	Draw_Voxel_Portable(state, false, false, false);
 }
 
 
@@ -2026,85 +1644,7 @@ void __cdecl Draw_Voxel_Regular(VoxelFuncArgumentStruct * state)
 /// <param name="state">The projection, stride and voxel data setup for this object.</param>
 void __cdecl Draw_Voxel_Reverse(VoxelFuncArgumentStruct * state)
 {
-	/*
-	 * Precompute screen projection deltas for every Z step
-	 */
-	Fill_Delta_Table2(state);
-
-	/// Set starting 2D projection position
-	unsigned short pixel_x = state->TransformMatrix[0].I;
-	unsigned short pixel_y = state->TransformMatrix[0].J;
-
-	/// Iterate over voxel Y slices (rows)
-	for (unsigned int y = 0; y < state->YSize; y++) {
-		unsigned int base_index = state->StartIndex;
-		unsigned short row_start_x = pixel_x;
-		unsigned short row_start_y = pixel_y;
-
-		/// Iterate over voxel X columns (within the current Y row)
-		for (unsigned int x = 0; x < state->XSize; x++) {
-			unsigned int data_offset = ((unsigned int *)state->EndOffset)[state->StartIndex];
-			unsigned short column_start_x = pixel_x;
-			unsigned short column_start_y = pixel_y;
-
-			if (data_offset != UINT_MAX) {
-				unsigned char * ptr = state->DataOffset + data_offset;
-				unsigned int remaining = state->ZSize;
-
-				/// Parse voxel run-length encoded data along Z axis
-				while (remaining) {
-
-					// Byte 4 - run length(backward)
-					unsigned int run_length = *ptr;
-					ptr--;
-
-					if (run_length) {
-						remaining -= run_length;
-						while (run_length) {
-
-							/*
-							 * Byte 2 - color index
-							 */
-							unsigned char color_index = *ptr;
-							ptr--;
-
-							/// Compute buffer index and write color
-							VoxelDrawBuffer[(pixel_x >> 8) | (pixel_y & 0xFF00)] = color_index;
-							VoxelDrawBuffer[(pixel_x >> 8) | (pixel_y & 0xFF00) + 1] = color_index;
-
-							pixel_x += state->TransformMatrix[3].I;
-							pixel_y += state->TransformMatrix[3].J;
-							run_length--;
-						}
-					}
-
-					// Byte 1 - run length(forward)
-					ptr--;
-
-					/*
-					 * Byte 0 - pixel delta
-					 */
-					unsigned char delta = *ptr;
-					ptr--;
-
-					pixel_x += VoxelPixelDeltaTable[delta][0];
-					pixel_y += VoxelPixelDeltaTable[delta][1];
-
-					remaining -= delta;
-				}
-			}
-
-			/// Advance to next voxel in X direction
-			pixel_x = column_start_x + state->TransformMatrix[1].I;
-			pixel_y = column_start_y + state->TransformMatrix[1].J;
-			state->StartIndex = state->StrideX + state->StartIndex;
-		}
-
-		/// Advance to next voxel row (Y direction)
-		pixel_x = row_start_x + state->TransformMatrix[2].I;
-		pixel_y = row_start_y + state->TransformMatrix[2].J;
-		state->StartIndex = state->StrideY + base_index;
-	}
+	Draw_Voxel_Portable(state, true, false, false);
 }
 
 

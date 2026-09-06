@@ -28,8 +28,8 @@ CStreamClass::CStreamClass(void) :
 	IsWriting(false),
 	CurOffset(0),
 	DataBuffer(new unsigned char[BUFFER_SIZE]),
-	StreamBuffer(new unsigned char[BUFFER_SIZE]),
-	LZODictionary(new unsigned char[BUFFER_SIZE])
+	StreamBuffer(new unsigned char[LZO_Compression_Bound(BUFFER_SIZE)]),
+	LZODictionary(new unsigned char[LZO1X_MEM_COMPRESS]())
 {
 	BlockHead.CompSize = BUFFER_SIZE - 1;
 }
@@ -254,6 +254,9 @@ HRESULT CStreamClass::Read(void *pv, ULONG cb, ULONG *pcbRead)
 		if (read != sizeof(BlockHead)) {
 			return(E_FAIL);
 		}
+		if (BlockHead.CompSize > LZO_Compression_Bound(BUFFER_SIZE) || BlockHead.UncompSize > BUFFER_SIZE) {
+			return(E_FAIL);
+		}
 
 		hr = StreamPtr->Read(StreamBuffer, BlockHead.CompSize, &read);
 		if (FAILED(hr)) {
@@ -267,7 +270,11 @@ HRESULT CStreamClass::Read(void *pv, ULONG cb, ULONG *pcbRead)
 		lzo_byte *out = (lzo_byte *)DataBuffer;
 		lzo_byte *in = (lzo_byte *)StreamBuffer;
 		unsigned int out_len = BUFFER_SIZE;
-		lzo1x_decompress(in, inlen, out, &out_len, 0);
+		if (lzo1x_decompress(in, inlen, out, &out_len, 0) != LZO_E_OK || out_len > BlockHead.UncompSize) {
+			return(E_FAIL);
+		}
+		// Older streams stamp full block size on the final partial block.
+		BlockHead.UncompSize = out_len;
 		CurOffset = BlockHead.UncompSize;
 	}
 
@@ -490,7 +497,7 @@ HRESULT CStreamClass::Compress(void *in_buffer, ULONG length)
 	HRESULT hr;
 	unsigned int out_len = length;
 	lzo1x_1_compress((lzo_byte *)in_buffer, length, (lzo_byte *)StreamBuffer, &out_len, (lzo_byte *)LZODictionary);
-	BlockHead.UncompSize = BUFFER_SIZE;
+	BlockHead.UncompSize = length;
 	length = 0;
 	BlockHead.CompSize = out_len;
 

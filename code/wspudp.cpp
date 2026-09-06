@@ -44,6 +44,7 @@
 #include "wspudp.h"
 
 #include "dbgprint.h"
+#include "locallantest.hh"
 #include "misc.h"
 #include "msgloop.h"
 #include "vector.h"
@@ -141,6 +142,12 @@ void UDPInterfaceClass::Configure_Tunnel(unsigned short local_id, unsigned long 
 /// <returns>Whatever sendto returned, counting only the payload.</returns>
 int UDPInterfaceClass::Send_To(const char *buffer, int buffer_len, sockaddr_in *destination)
 {
+#ifdef _DEBUG
+	if (LoopbackLANTest.Enabled() && (TunnelPort != 0 || !LoopbackLANTest.Is_Peer(ntohl(destination->sin_addr.s_addr), ntohs(destination->sin_port)))) {
+		WSASetLastError(WSAEACCES);
+		return SOCKET_ERROR;
+	}
+#endif
 	if (TunnelPort == 0) {
 		return(sendto(Socket, buffer, buffer_len, 0, reinterpret_cast<const sockaddr *>(destination), sizeof(*destination)));
 	}
@@ -178,6 +185,16 @@ int UDPInterfaceClass::Receive_From(char *buffer, int buffer_len, sockaddr_in *s
 {
 	int address_len = sizeof(*source);
 
+#ifdef _DEBUG
+	if (LoopbackLANTest.Enabled()) {
+		int result = recvfrom(Socket, buffer, buffer_len, 0, reinterpret_cast<sockaddr *>(source), &address_len);
+		if (result != SOCKET_ERROR && (TunnelPort != 0 || !LoopbackLANTest.Is_Peer(ntohl(source->sin_addr.s_addr), ntohs(source->sin_port)))) {
+			WSASetLastError(WSAEACCES);
+			return SOCKET_ERROR;
+		}
+		return result;
+	}
+#endif
 	if (TunnelPort == 0) {
 		return(recvfrom(Socket, buffer, buffer_len, 0, reinterpret_cast<sockaddr *>(source), &address_len));
 	}
@@ -264,6 +281,9 @@ void UDPInterfaceClass::Clear_Broadcast_Addresses(void)
  *=============================================================================================*/
 void UDPInterfaceClass::Set_Broadcast_Address (const IPXAddressClass &address)
 {
+#ifdef _DEBUG
+	if (LoopbackLANTest.Enabled() && !LoopbackLANTest.Is_Peer(ntohl(address.Get_IP()), ntohs(address.Get_Port()))) return;
+#endif
 	BroadcastAddresses.Add (new IPXAddressClass(address));
 }
 
@@ -310,6 +330,12 @@ bool UDPInterfaceClass::Open_Socket ( SOCKET )
 	addr.sin_family = AF_INET;
 	addr.sin_port = (unsigned short) htons ( LocalPortSet ? LocalPort : (unsigned short) WestwoodOnline_PortNumber );
 	addr.sin_addr.s_addr = htonl (INADDR_ANY);
+#ifdef _DEBUG
+	if (LoopbackLANTest.Enabled()) {
+		addr.sin_addr.s_addr = htonl(LoopbackLANTestConfig::Address());
+		addr.sin_port = htons(LoopbackLANTest.LocalPort);
+	}
+#endif
 
 	DebugString("About to bind the UDP socket to port %d\n", ntohs(addr.sin_port));
 
@@ -367,6 +393,14 @@ bool UDPInterfaceClass::Open_Socket ( SOCKET )
 /// </remarks>
 void UDPInterfaceClass::Register_Local_Addresses()
 {
+#ifdef _DEBUG
+	if (LoopbackLANTest.Enabled()) {
+		unsigned char * local = new unsigned char[4];
+		*reinterpret_cast<unsigned long *>(local) = htonl(LoopbackLANTestConfig::Address());
+		LocalAddresses.Add(local);
+		return;
+	}
+#endif
 	unsigned long size = 0;
 
 	if (GetAdaptersInfo(nullptr, &size) == ERROR_BUFFER_OVERFLOW) {
@@ -564,8 +598,15 @@ int UDPInterfaceClass::Message_Handler(HWND, UINT message, UINT, LONG lParam)
 				/*
 				**	Make sure this packet didn't come from us. If it did then throw it away.
 				*/
-				for ( int i=0 ; i<LocalAddresses.Count() ; i++ ) {
-					if ( ! memcmp (LocalAddresses[i], &addr.sin_addr.s_addr, 4) ) return(0);
+#ifdef _DEBUG
+				if (LoopbackLANTest.Enabled()) {
+					if (LoopbackLANTest.Is_Self(ntohl(addr.sin_addr.s_addr), ntohs(addr.sin_port))) return(0);
+				} else
+#endif
+				{
+					for ( int i=0 ; i<LocalAddresses.Count() ; i++ ) {
+						if ( ! memcmp (LocalAddresses[i], &addr.sin_addr.s_addr, 4) ) return(0);
+					}
 				}
 
 				/*

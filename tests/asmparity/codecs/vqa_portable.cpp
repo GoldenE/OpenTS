@@ -1,0 +1,15 @@
+#define VQA_LCW_Uncompress Portable_VQA_LCW_Uncompress
+#define AudioUnzap Portable_AudioUnzap
+#define sosCODECInitStream Portable_sosCODECInitStream
+#define sosCODECDecompressData Portable_sosCODECDecompressData
+#define General_sosCODECInitStream Portable_General_sosCODECInitStream
+#define General_sosCODECDecompressData Portable_General_sosCODECDecompressData
+#define VQA_sosCODECInitStream Portable_VQA_sosCODECInitStream
+#define VQA_sosCODECDecompressData Portable_VQA_sosCODECDecompressData
+#define ASM_UnVQ1_C1_TABLE Portable_ASM_UnVQ1_C1_TABLE
+#define ASM_UnVQ1_C1_TABLE_ALT Portable_ASM_UnVQ1_C1_TABLE_ALT
+#define ASM_UnVQ1_C1_4x4 Portable_ASM_UnVQ1_C1_4x4
+#define ASM_UnVQ_4x2 Portable_ASM_UnVQ_4x2
+#define ASM_UnVQ_4x4 Portable_ASM_UnVQ_4x4
+#define ASM_UnVQ_4x4_HALF Portable_ASM_UnVQ_4x4_HALF
+#include "../../../code/vqalib/lcwdecode.cpp"

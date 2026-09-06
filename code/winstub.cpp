@@ -41,6 +41,7 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "always.h"
+#include "architecture.hh"
 
 #include "winstub.h"
 
@@ -179,7 +180,7 @@ extern bool InMovie;
 /// locking and shutdown -- and passes everything else back to Windows.
 /// </summary>
 /// <returns>Returns with the result Windows expects for the message handled.</returns>
-LRESULT CALLBACK /*_export*/ Windows_Procedure(HWND hwnd, UINT message, UINT wParam, LONG lParam)
+LRESULT CALLBACK /*_export*/ Windows_Procedure(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
 
 	/*
@@ -191,7 +192,7 @@ LRESULT CALLBACK /*_export*/ Windows_Procedure(HWND hwnd, UINT message, UINT wPa
 		if (Route_Mouse_Message(hwnd, message, wParam, lParam, &translated_lparam)) {
 			return(0);
 		}
-		lParam = (LONG)translated_lparam;
+		lParam = translated_lparam;
 	}
 
 	int	low_param = LOWORD(wParam);
@@ -398,10 +399,10 @@ LRESULT CALLBACK /*_export*/ Windows_Procedure(HWND hwnd, UINT message, UINT wPa
 /// This routine is used by the network code to check that every machine joining a
 /// game is running the same build.
 /// </summary>
-/// <returns>Returns with the packed project version this executable was built from.</returns>
+/// <returns>Returns the project version and architecture identity used for shared game state.</returns>
 unsigned int Build_Number(void)
 {
-	return(OPENTS_VERSION_PACKED);
+	return(OPENTS_STATE_VERSION);
 }
 
 

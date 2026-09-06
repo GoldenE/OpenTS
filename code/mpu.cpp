@@ -37,6 +37,7 @@
 #include "win.h"
 
 #include <math.h>
+#include <intrin.h>
 
 typedef union {
 	LARGE_INTEGER LargeInt;
@@ -81,38 +82,7 @@ unsigned int Get_CPU_Rate(unsigned int & high)
 }
 
 
-#if 0
-/***********************************************************************************************
- * Get_CPU_Clock -- Fetches the current CPU clock time.                                        *
- *                                                                                             *
- *    This routine will return the internal Pentium clock accumulator. This accumulator is     *
- *    incremented every clock tick. Since this clock value can get very very large, the value  *
- *    returned is in 64 bits. The low half is returned directly, the high half is stored in    *
- *    location specified.                                                                      *
- *                                                                                             *
- * INPUT:   high  -- Reference to the high value of the 64 bit clock number.                   *
- *                                                                                             *
- * OUTPUT:  Returns with the low half of the CPU clock value.                                  *
- *                                                                                             *
- * WARNINGS:   This instruction is only available on Pentium or later processors.              *
- *                                                                                             *
- * HISTORY:                                                                                    *
- *   07/17/1996 JLB : Created.                                                                 *
- *=============================================================================================*/
-unsigned int Get_CPU_Clock(unsigned int & high)
-{
-	int h;
-	int l;
-	__asm {
-		_emit 0Fh
-		_emit 31h
-		mov	[h],edx
-		mov	[l],eax
-	}
-	high = h;
-	return(l);
-}
-#endif
+
 
 
 /*
@@ -131,7 +101,6 @@ unsigned int Get_CPU_Clock(unsigned int & high)
 **
 */
 
-#define ASM_RDTSC _asm _emit 0x0f _asm _emit 0x31
 
 // Max # of samplings to allow before giving up and returning current average.
 #define MAX_TRIES			20
@@ -151,12 +120,9 @@ static unsigned long TSC_High;
 /// <remarks>Only call this routine on a processor that supports the RDTSC opcode.</remarks>
 void RDTSC(void)
 {
-	_asm
-	{
-		ASM_RDTSC;
-		mov	TSC_Low, eax
-		mov	TSC_High, edx
-	}
+	unsigned __int64 const clock = __rdtsc();
+	TSC_Low = static_cast<unsigned long>(clock);
+	TSC_High = static_cast<unsigned long>(clock >> 32);
 }
 
 
@@ -233,8 +199,7 @@ int Get_RDTSC_CPU_Speed(void)
 			QueryPerformanceCounter(&t1);
 		}
 
-		ASM_RDTSC;
-		_asm	mov	stamp0, EAX
+		stamp0 = static_cast<unsigned int>(__rdtsc());
 
 		t0.LowPart = t1.LowPart;		// Reset Initial Time
 		t0.HighPart = t1.HighPart;
@@ -247,8 +212,7 @@ int Get_RDTSC_CPU_Speed(void)
 			QueryPerformanceCounter(&t1);
 		}
 
-		ASM_RDTSC;
-		_asm	mov	stamp1, EAX
+		stamp1 = static_cast<unsigned int>(__rdtsc());
 
 
 		cycles = stamp1 - stamp0;					// # of cycles passed between reads

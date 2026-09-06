@@ -22,6 +22,8 @@
 #include "isotype.hh"
 #include "land.hh"
 
+#include <cstdint>
+
 class LightConvertClass;
 class Surface;
 class ShapeSet;
@@ -115,11 +117,15 @@ class IsoTileSet
 
 		IsoTileRecord const * Fetch_Record_Pointer(int index) const
 		{
-			return(Tiles[index % Tile_Count()]);
+			return(Fetch_Record_Pointer_Unsafe(index % Tile_Count()));
 		}
 		IsoTileRecord const * Fetch_Record_Pointer_Unsafe(int index) const
 		{
-			return(Tiles[index]);
+			return Tiles[index] == 0 ? nullptr : reinterpret_cast<IsoTileRecord const *>(reinterpret_cast<unsigned char const *>(this) + Tiles[index]);
+		}
+		IsoTileRecord * Fetch_Record_Pointer_Unsafe(int index)
+		{
+			return Tiles[index] == 0 ? nullptr : reinterpret_cast<IsoTileRecord *>(reinterpret_cast<unsigned char *>(this) + Tiles[index]);
 		}
 
 		/*
@@ -159,12 +165,8 @@ class IsoTileSet
 		int Width;
 		int Height;
 
-		/*
-		 * This is the first of the tile set's image record pointers, one per sub-tile, held in
-		 * the file as offsets from the start of the set and converted in place by the loader.
-		 * Reach a record through Fetch_Record_Pointer rather than through the array.
-		 */
-		IsoTileRecord *Tiles[1];
+		// TMP records retain their 32-bit file offsets on both supported architectures.
+		std::uint32_t Tiles[1];
 
 
 	/*

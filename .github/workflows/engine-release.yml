@@ -20,29 +20,33 @@ jobs:
       official: true
 
   package:
-    name: Attach the packaged build
+    name: Attach the ${{ matrix.architecture }} build
     needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    strategy:
+      matrix:
+        architecture: [Win32, x64]
     env:
       TAG: ${{ github.event.release.tag_name }}
+      ARCHITECTURE: ${{ matrix.architecture }}
     steps:
       - name: Download the build artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          pattern: opents-release-Release-*
+          pattern: opents-release-${{ matrix.architecture }}-Release-*
           merge-multiple: true
           path: artifact
 
       - name: Package the release zip
         working-directory: artifact
-        run: zip "../OpenTS-${TAG}.zip" Game.exe Game.pdb Language.dll
+        run: zip "../OpenTS-${TAG}-${ARCHITECTURE}.zip" Game.exe Game.pdb Language.dll
 
       - name: Attach the zip to the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$TAG" "OpenTS-${TAG}.zip" --clobber --repo "$GITHUB_REPOSITORY"
+        run: gh release upload "$TAG" "OpenTS-${TAG}-${ARCHITECTURE}.zip" --clobber --repo "$GITHUB_REPOSITORY"
 
   notes:
     name: Append generated release notes

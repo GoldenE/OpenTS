@@ -687,15 +687,16 @@ bool SurfaceCacheClass::DrawMasked(Rect const & rect, Surface & tosurface, Surfa
 				}
 			} else if (src_x < image_width - right_clip) {
 				unsigned char * mptr = mask_row;
-				int source_delta = (int)palsource - (int)mask;
+				unsigned char * sptr = palsource + (mask_row - mask);
 				unsigned short * dptr = dest + dst_index;
 				int count = image_width - right_clip - src_x;
 				do {
 					if (*mptr != 0) {
-						*dptr = OD_Blend_Color(*dptr, pal16[(unsigned char)mptr[source_delta]], *mptr);
+						*dptr = OD_Blend_Color(*dptr, pal16[*sptr], *mptr);
 					}
 					dptr++;
 					mptr++;
+					sptr++;
 					count--;
 				} while (count != 0);
 			}

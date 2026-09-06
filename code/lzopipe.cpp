@@ -67,7 +67,7 @@ LZOPipe::LZOPipe(CompControl control, int blocksize) :
 		Buffer2(NULL),
 		BlockSize(blocksize)
 {
-	SafetyMargin = BlockSize;
+	SafetyMargin = static_cast<int>(LZO_Compression_Bound(BlockSize)) - BlockSize;
 	Buffer = new char[BlockSize+SafetyMargin];
 	Buffer2 = new char[BlockSize+SafetyMargin];
 	BlockHeader.CompCount = 0xFFFF;
@@ -196,7 +196,7 @@ int LZOPipe::Put(void const * source, int slen)
 
 			if (Counter == BlockSize) {
 				unsigned int len = sizeof (Buffer2);
-				char *dictionary = new char [64*1024];
+				char *dictionary = new char[LZO1X_MEM_COMPRESS]();
 				lzo1x_1_compress ((unsigned char*)Buffer, BlockSize, (unsigned char*)Buffer2, &len, dictionary);
 				delete [] dictionary;
 				BlockHeader.CompCount = (unsigned short)len;
@@ -213,7 +213,7 @@ int LZOPipe::Put(void const * source, int slen)
 		*/
 		while (slen >= BlockSize) {
 			unsigned int len = 0;//sizeof (Buffer2);
-			char *dictionary = new char [64*1024];
+			char *dictionary = new char[LZO1X_MEM_COMPRESS]();
 			lzo1x_1_compress ((unsigned char*)source, BlockSize, (unsigned char*)Buffer2, &len, dictionary);
 			delete [] dictionary;
 			source = ((char *)source) + BlockSize;
@@ -300,7 +300,7 @@ int LZOPipe::Flush(void)
 			**	compress the partial block and output normally.
 			*/
 			unsigned int len = 0;//sizeof (Buffer2);
-			char *dictionary = new char [64*1024];
+			char *dictionary = new char[LZO1X_MEM_COMPRESS]();
 			lzo1x_1_compress ((unsigned char*)Buffer, Counter, (unsigned char *)Buffer2, &len, dictionary);
 			delete [] dictionary;
 			BlockHeader.CompCount = (unsigned short)len;

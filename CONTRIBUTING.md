@@ -1,9 +1,6 @@
 # Contributing to OpenTS
 
-OpenTS welcomes focused bug reports, proposals, documentation improvements, and
-code contributions. Visual Studio 2022 Win32 Debug and Release builds are the
-supported development target. A successful build is not runtime evidence, and
-every contribution must distinguish the two.
+OpenTS welcomes focused bug reports, proposals, documentation improvements, and code contributions. Visual Studio 2022 Win32 and x64 Debug and Release builds are the supported development target. A successful build is not runtime evidence, and every contribution must distinguish the two.
 
 ## Before starting
 
@@ -65,8 +62,7 @@ Before changing behavior at a boundary:
 
 Compatibility across versions is promised only where a documented contract
 provides it. In particular, saves and network sessions carry the project
-version, so different release versions refuse to load each other's saves or
-play together. Development snapshots within one cycle share that version
+version and target architecture, so different release versions or architectures refuse to load each other's saves or play together. Development snapshots within one cycle and architecture share that version
 stamp: they may accumulate incompatible save, replay, network, and
 simulation changes before the release, and no interchange between snapshots
 is promised. Test against the current snapshot, document what the change
@@ -147,10 +143,7 @@ changes, the replay harness in [Runtime testing](docs/TESTING.md) shows whether
 a fixed recording still produces the same sync dump, and its checklist covers
 what the dump cannot see.
 
-Continuous integration builds Win32 Debug and Release and runs the CTest suite
-for every pull request that touches the engine. It reports the same class of
-result a local build does, so it does not replace the runtime evidence a
-behavior change needs.
+Continuous integration builds Win32 and x64 Debug and Release and runs the CTest suite for every pull request that touches the engine. It reports the same class of result a local build does, so it does not replace the runtime evidence a behavior change needs.
 
 ## Pull request content
 

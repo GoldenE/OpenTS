@@ -77,6 +77,8 @@
 #define INCLUDE_COM
 #include "always.h"
 
+#include <cstdint>
+
 #include "cell.h"
 
 #include "_alpha.h"
@@ -2058,11 +2060,11 @@ void CellClass::Draw_Shroud_Or_Fog_Shape(Point2D const & drawpoint, Rect const &
 					*alphaptr = pixel;
 				}
 				alphaptr++;
-				alphaptr = (unsigned short *)AlphaBuffer->Wrap_Overflow((unsigned)alphaptr);
+				alphaptr = (unsigned short *)AlphaBuffer->Wrap_Overflow((std::uintptr_t)alphaptr);
 			}
 			shapeptr += shape_skip;
 			alphaptr += alpha_skip;
-			alphaptr = (unsigned short *)AlphaBuffer->Wrap_Overflow((unsigned)alphaptr);
+			alphaptr = (unsigned short *)AlphaBuffer->Wrap_Overflow((std::uintptr_t)alphaptr);
 		}
 	} else {
 		for (int i = inter_top; i < inter_bottom; i++) {
@@ -2134,11 +2136,11 @@ void CellClass::Draw_Fog_Shape(Point2D const & drawpoint, Rect const & cliprect,
 					}
 				}
 				alphaptr++;
-				alphaptr = (unsigned short *)AlphaBuffer->Wrap_Overflow((unsigned)alphaptr);
+				alphaptr = (unsigned short *)AlphaBuffer->Wrap_Overflow((std::uintptr_t)alphaptr);
 			}
 			shapeptr += shape_skip;
 			alphaptr += alpha_skip;
-			alphaptr = (unsigned short *)AlphaBuffer->Wrap_Overflow((unsigned)alphaptr);
+			alphaptr = (unsigned short *)AlphaBuffer->Wrap_Overflow((std::uintptr_t)alphaptr);
 		}
 	} else {
 		for (int i = inter_top; i < inter_bottom; i++) {
@@ -3393,7 +3395,8 @@ int CellClass::Tiberium_Adjust(bool pregame)
 			*/
 			int value = tiberium->CreditValue;
 			if (pregame) {
-				Overlay = (OverlayType)Random_Pick((int)tiberium->Overlay, (int)&tiberium->Overlay[tiberium->Variety - 1]);
+				int const first_overlay = tiberium->Overlay->HeapID;
+				Overlay = static_cast<OverlayType>(Random_Pick(first_overlay, first_overlay + tiberium->Variety - 1));
 			}
 
 			/*

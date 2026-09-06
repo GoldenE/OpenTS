@@ -1,0 +1,5 @@
+set(codec_sources codecs.cpp sos_portable.cpp vqa_portable.cpp unvq_portable.cpp "${CMAKE_SOURCE_DIR}/code/lcw.cpp")
+if(TARGET OpenTSAsmReference)
+    list(APPEND codec_sources lcw_reference.cpp)
+endif()
+opents_add_asmparity(Codecs SOURCES ${codec_sources})

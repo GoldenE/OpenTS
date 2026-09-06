@@ -33,22 +33,19 @@ typedef _VQA_SOS_COMPRESS_INFO VQASOS;
 
 
 extern "C" {
+// length limits output; source must contain complete encoded commands.
 unsigned long __cdecl VQA_LCW_Uncompress(char const *source, char *dest, unsigned long length);
 }
 
-//#define VQA_LCW_Uncompress LCW_Uncompress
-
 extern "C" {
+// Returns compressed bytes consumed; destination capacity must cover complete commands.
 long __cdecl AudioUnzap(void *source, void *dest, long);
 }
 
 extern "C" {
-void __cdecl sosCODECInitStream_VQASNJ(_VQA_SOS_COMPRESS_INFO *, unsigned short idx, unsigned int pred);
 void __cdecl VQA_sosCODECInitStream(_VQA_SOS_COMPRESS_INFO *);
 void __cdecl VQA_sosCODECDecompressData(void *src, void *dst, unsigned short wBitSize, unsigned short wChannels, unsigned long dwUnCompSize, _VQA_SOS_COMPRESS_INFO *sosinfo);
 }
-
-//#define VQA_sosCODECDecompressData sosCODECDecompressData
 
 #if defined(__WATCOMC__) || defined(_MSC_VER)
 #pragma pack(pop)

@@ -484,8 +484,9 @@ long __cdecl VQA_AudioFillCallback(VQAHandleP *vqap)
 }
 
 
-long __cdecl VQA_AudioDoneCallback(VQAHandleP *vqap, unsigned long buffer)
+long __cdecl VQA_AudioDoneCallback(VQAHandle *vqa, void *buffer)
 {
+	VQAHandleP *vqap = (VQAHandleP *)vqa;
 	VQAConfig *config;
 	VQAAudio *audio;
 	unsigned long  block;
@@ -493,7 +494,7 @@ long __cdecl VQA_AudioDoneCallback(VQAHandleP *vqap, unsigned long buffer)
 	audio = &vqap->Audio;
 	config = &vqap->Config;
 
-	if ((void *)buffer == audio->Buffer + audio->PlayPosition || (void *)buffer == audio->HMIBuffer) {
+	if (buffer == audio->Buffer + audio->PlayPosition || buffer == audio->HMIBuffer) {
 
 		block = audio->Block2;
 

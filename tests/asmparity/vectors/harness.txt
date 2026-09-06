@@ -1,0 +1,2 @@
+OPENTS_ASMPARITY_1
+harness-roundtrip	42	010203	030201

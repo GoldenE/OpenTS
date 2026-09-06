@@ -38,6 +38,7 @@
 #include "lcwstraw.h"
 
 #include "lcw.h"
+#include "lcwstream.h"
 
 #include <cassert>
 #include <cstring>
@@ -67,9 +68,10 @@ LCWStraw::LCWStraw(CompControl control, int blocksize) :
 		Counter(0),
 		Buffer(NULL),
 		Buffer2(NULL),
-		BlockSize(blocksize)
+		BlockSize(blocksize),
+		Failed(false)
 {
-	SafetyMargin = BlockSize/128+1;
+	SafetyMargin = LCW_Stream_Margin(BlockSize, control == COMPRESS);
 	Buffer = new char[BlockSize+SafetyMargin];
 	if (control == COMPRESS) {
 		Buffer2 = new char[BlockSize+SafetyMargin];
@@ -124,6 +126,7 @@ LCWStraw::~LCWStraw(void)
  *=============================================================================================*/
 int LCWStraw::Get(void * destbuf, int slen)
 {
+	if (Failed) return 0;
 	assert(Buffer != NULL);
 
 	int total = 0;
@@ -158,6 +161,10 @@ int LCWStraw::Get(void * destbuf, int slen)
 		if (Control == DECOMPRESS) {
 			int incount = BASECLASS::Get(&BlockHeader, sizeof(BlockHeader));
 			if (incount != sizeof(BlockHeader)) break;
+			if (BlockHeader.CompCount == 0 || BlockHeader.CompCount > BlockSize + SafetyMargin || BlockHeader.UncompCount > BlockSize) {
+				Failed = true;
+				break;
+			}
 
 			void * ptr = &Buffer[(BlockSize+SafetyMargin) - BlockHeader.CompCount];
 			incount = BASECLASS::Get(ptr, BlockHeader.CompCount);

@@ -19,6 +19,7 @@ source_files:
   - code/abstract.cpp
   - code/objtype.cpp
   - code/unittype.cpp
+  - code/architecture.hh
 ---
 
 The save dialog creates `.SAV` files. Each file is an OLE compound document: the listing details live in the document's own property set, and the game state goes into a single `CONTENTS` stream that is compressed as it is written.
@@ -39,15 +40,9 @@ The `CONTENTS` stream is a fixed sequence of records — the scenario, the envir
 
 ## What is checked
 
-The project-version stamp decides whether a file is offered at all, and only
-the running version's stamp is accepted. The load dialog reads the property set
-of every `.SAV` in the game directory and skips every file stamped by anything
-else, including the Tiberian Sun release and another OpenTS release-cycle
-version. A save that reaches the engine without passing through the dialog, as
-a network save does, is checked the same way and refused. Development snapshots
-within one cycle share the stamp; that mechanical match is not a promise that
-their save layouts or simulation state interoperate. A listed save that was not
-made in a campaign is marked with a leading `*`.
+The state-version stamp includes the release-cycle version and target architecture. The load dialog reads the property set of every `.SAV` in the game directory and skips every file with a different stamp, including saves from Tiberian Sun, another OpenTS release cycle, or the other architecture. A save that reaches the engine without passing through the dialog is checked before any session state changes. Development snapshots within one cycle and architecture share the stamp; that mechanical match is not a promise that their save layouts or simulation state interoperate. A listed save that was not made in a campaign is marked with a leading `*`.
+
+Object identities and pointer references occupy four bytes in Win32 saves and eight bytes in x64 saves. Their serialized widths follow the target architecture even though the remaining numeric fields retain their declared widths. The architecture stamp keeps those records from being read with the wrong pointer width.
 
 Beyond that stamp and the add-on the scenario declares, nothing about a save is measured against the game it is being loaded into. A save made under one set of rules and loaded under another is not detected, and the type definitions stored in the file are simply restored over the ones the rules built.
 

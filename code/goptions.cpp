@@ -52,8 +52,8 @@
 #include "special.hh"
 
 void Game_Options_On_INITDIALOG(HWND window);
-BOOL CALLBACK Game_Options_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
-BOOL CALLBACK Abort_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
+INT_PTR CALLBACK Game_Options_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
+INT_PTR CALLBACK Abort_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
 void Abort_Dialog_On_COMMAND(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
 
 /// <summary>
@@ -81,7 +81,7 @@ void Game_Options_Dialog(void)
 
 	if (dialog) {
 
-		SetWindowLong(dialog, DWL_USER, (LONG)&rc);
+		SetWindowLongPtr(dialog, DWLP_USER, (LONG_PTR)&rc);
 
 		OwnerDraw::Display_Dialog(dialog);
 
@@ -124,7 +124,7 @@ void Game_Options_Dialog(void)
 /// connection quality slider updates the label beside it.
 /// </summary>
 /// <returns>Returns with TRUE if the owner draw system consumed the message.</returns>
-BOOL CALLBACK Game_Options_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+INT_PTR CALLBACK Game_Options_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
 	static int GameConnectionQualityNames[] = {
 		TXT_WORST_CONNECTION,
@@ -133,7 +133,7 @@ BOOL CALLBACK Game_Options_Dialog_Proc(HWND window, UINT message, WPARAM wparam,
 		TXT_BEST_CONNECTION
 	};
 
-	BOOL rc = OwnerDraw::Default_Dialog_Proc(window, message, wparam, lparam);
+	INT_PTR rc = OwnerDraw::Default_Dialog_Proc(window, message, wparam, lparam);
 
 	HWND handle;
 
@@ -149,7 +149,7 @@ BOOL CALLBACK Game_Options_Dialog_Proc(HWND window, UINT message, WPARAM wparam,
 
 		case WM_COMMAND: {
 			int code = HIWORD(wparam);
-			int* retval = (int *)GetWindowLong(window, DWL_USER);
+			int* retval = (int *)GetWindowLongPtr(window, DWLP_USER);
 
 			switch (LOWORD(wparam)) {
 
@@ -352,7 +352,7 @@ int Abort_Dialog(void)
 
 	if (dialog) {
 
-		SetWindowLong(dialog, DWL_USER, (LONG)&rc);
+		SetWindowLongPtr(dialog, DWLP_USER, (LONG_PTR)&rc);
 
 		OwnerDraw::Display_Dialog(dialog);
 
@@ -374,11 +374,11 @@ int Abort_Dialog(void)
 /// presses along to Abort_Dialog_On_COMMAND.
 /// </summary>
 /// <returns>Returns with the result of the owner draw default dialog handler.</returns>
-BOOL CALLBACK Abort_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+INT_PTR CALLBACK Abort_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
 	HWND handle;
 
-	int rc = OwnerDraw::Default_Dialog_Proc(window, message, wparam, lparam);
+	INT_PTR rc = OwnerDraw::Default_Dialog_Proc(window, message, wparam, lparam);
 	if (rc == 0) {
 		switch (message) {
 			case WM_INITDIALOG:
@@ -410,7 +410,7 @@ BOOL CALLBACK Abort_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM
 /// <param name="lparam">The notification code that came with the button press.</param>
 void Abort_Dialog_On_COMMAND(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
-	int* retval = (int *)GetWindowLong(window, DWL_USER);
+	int* retval = (int *)GetWindowLongPtr(window, DWLP_USER);
 
 	switch ((int)message) {
 		case IDC_ABORT_MISSION:

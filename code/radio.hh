@@ -13,6 +13,10 @@
 
 #pragma once
 
+#include <cstdint>
+
+using RadioParameter = std::intptr_t;
+
 
 /****************************************************************************
 **	These are the various radio message that can be transmitted between

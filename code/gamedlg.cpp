@@ -84,7 +84,7 @@ int GameDifficultyNames[OptionsClass::MAX_DIFFICULTY_SETTING] = {
 };
 
 
-BOOL CALLBACK Game_Controls_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
+INT_PTR CALLBACK Game_Controls_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
 void Game_Controls_Dialog_On_COMMAND(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
 
 /***********************************************************************************************
@@ -117,7 +117,7 @@ void GameControlsClass::Dialog(void)
 
 	if (_Dialog) {
 
-		SetWindowLong(_Dialog, DWL_USER, (LONG)&res);
+		SetWindowLongPtr(_Dialog, DWLP_USER, (LONG_PTR)&res);
 
 		OwnerDraw::Display_Dialog(_Dialog);
 
@@ -225,12 +225,12 @@ void GameControlsClass::Set(void)
 /// </summary>
 /// <returns>Returns with a non-zero value if the message was consumed by the ownerdraw
 /// layer.</returns>
-BOOL CALLBACK Game_Controls_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+INT_PTR CALLBACK Game_Controls_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
 	HWND handle;
 	int index;
 
-	int rc = OwnerDraw::Default_Dialog_Proc(window, message, wparam, lparam);
+	INT_PTR rc = OwnerDraw::Default_Dialog_Proc(window, message, wparam, lparam);
 	if (rc == 0) {
 		switch (message) {
 			case WM_INITDIALOG:
@@ -336,7 +336,7 @@ BOOL CALLBACK Game_Controls_Dialog_Proc(HWND window, UINT message, WPARAM wparam
 /// <param name="lparam">The notification code the control sent.</param>
 void Game_Controls_Dialog_On_COMMAND(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
-	int* retval = (int *)GetWindowLong(window, DWL_USER);
+	int* retval = (int *)GetWindowLongPtr(window, DWLP_USER);
 
 	switch ((INT)message) {
 		case IDC_OPT_KEYBOARD_BTN:

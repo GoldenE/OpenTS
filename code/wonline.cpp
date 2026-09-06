@@ -106,30 +106,30 @@ extern CComModule _Module;  // Required for COM - must be between atlbase.h and 
 // forward declarations
 void Show_Wait_Window(unsigned int event, bool block = true, const char * text = NULL);
 void Draw_Player_List(int keep_selection = false);
-BOOL CALLBACK WOL_Waiting_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
+INT_PTR CALLBACK WOL_Waiting_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
 bool WOL_Wait_Callback(void);
 void Close_Wait_Window(unsigned int event);
 void Handle_User_Leave(struct User & user);
 int Join_Lobby(void);
-BOOL CALLBACK WOL_Download_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
+INT_PTR CALLBACK WOL_Download_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
 User & Get_Channel_Host(void);
 void Shutdown_Chat(void);
-BOOL CALLBACK WOL_Find_Page_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
+INT_PTR CALLBACK WOL_Find_Page_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
 void Fill_Session_Players(struct User * users);
 bool Handle_Preview_Download(void);
 int Get_WDT_State_Silent(void);
-BOOL CALLBACK WOL_Main_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
-BOOL CALLBACK WOL_Login_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
-BOOL CALLBACK WOL_New_Nick_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
-BOOL CALLBACK WOL_Begin_Nick_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
-BOOL CALLBACK WOL_Find_Game_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
-BOOL CALLBACK WOL_Options_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
-BOOL CALLBACK WOL_Ladder_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
-BOOL CALLBACK WOL_Guest_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
-BOOL CALLBACK WOL_Password_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
-BOOL CALLBACK WOL_New_Chat_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
-BOOL CALLBACK WOL_New_Game_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
-BOOL CALLBACK WOL_Game_Options_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
+INT_PTR CALLBACK WOL_Main_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
+INT_PTR CALLBACK WOL_Login_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
+INT_PTR CALLBACK WOL_New_Nick_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
+INT_PTR CALLBACK WOL_Begin_Nick_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
+INT_PTR CALLBACK WOL_Find_Game_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
+INT_PTR CALLBACK WOL_Options_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
+INT_PTR CALLBACK WOL_Ladder_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
+INT_PTR CALLBACK WOL_Guest_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
+INT_PTR CALLBACK WOL_Password_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
+INT_PTR CALLBACK WOL_New_Chat_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
+INT_PTR CALLBACK WOL_New_Game_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
+INT_PTR CALLBACK WOL_Game_Options_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
 BOOL WOL_Button_Bar_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
 void NewLogin(HWND win);
@@ -478,7 +478,7 @@ void ViewHTML(const char * name, int no_ask)
 	fclose(file);
 
 	char exeName[MAX_PATH + 1];
-	int result = (int)FindExecutable(filename, NULL, exeName);
+	INT_PTR result = reinterpret_cast<INT_PTR>(FindExecutable(filename, NULL, exeName));
 
 	_unlink(filename);
 
@@ -5806,7 +5806,7 @@ int StoreLogin(const char *loginName, const char *password, bool passwordPlainte
 /// <param name="wParam">Message-specific parameter.</param>
 /// <param name="lParam">Message-specific parameter.</param>
 /// <returns>TRUE if the message was handled, FALSE otherwise.</returns>
-BOOL CALLBACK WOL_Login_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
+INT_PTR CALLBACK WOL_Login_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	LPCSTR nick = NULL;
 	LPCSTR pass = NULL;
@@ -6115,7 +6115,7 @@ BOOL CALLBACK WOL_Login_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM l
 /// <param name="wParam">Message-specific parameter.</param>
 /// <param name="lParam">Message-specific parameter.</param>
 /// <returns>TRUE if the message was handled, FALSE otherwise.</returns>
-BOOL CALLBACK WOL_Main_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
+INT_PTR CALLBACK WOL_Main_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	/// Shared toolbar (help/ladder/options/find/privacy) is handled by WOL_Button_Bar_Proc first.
 	if (WOL_Button_Bar_Proc(win, uMsg, wParam, lParam)) {
@@ -6980,7 +6980,7 @@ BOOL WOL_Button_Bar_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
 /// <param name="wParam">Message-specific parameter.</param>
 /// <param name="lParam">Message-specific parameter.</param>
 /// <returns>TRUE if the message was handled, FALSE otherwise.</returns>
-BOOL CALLBACK WOL_Find_Game_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
+INT_PTR CALLBACK WOL_Find_Game_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	static int Col_ChanPrivate = 19;
 	static int Col_ChanName = 34;
@@ -7550,7 +7550,7 @@ BOOL CALLBACK WOL_Find_Game_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPAR
 /// <param name="wParam">Message-specific parameter.</param>
 /// <param name="lParam">Message-specific parameter.</param>
 /// <returns>TRUE if the message was handled, FALSE otherwise.</returns>
-BOOL CALLBACK WOL_Find_Page_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
+INT_PTR CALLBACK WOL_Find_Page_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	switch (uMsg) {
 		case WM_COMMAND: {
@@ -7662,7 +7662,7 @@ BOOL CALLBACK WOL_Find_Page_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPAR
 /// <param name="wParam">Message-specific parameter.</param>
 /// <param name="lParam">Message-specific parameter.</param>
 /// <returns>TRUE if the message was handled, FALSE otherwise.</returns>
-BOOL CALLBACK WOL_Ladder_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
+INT_PTR CALLBACK WOL_Ladder_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	char buffer[256];
 
@@ -7982,7 +7982,7 @@ BOOL CALLBACK WOL_Ladder_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM 
 /// <param name="wParam">Message-specific parameter.</param>
 /// <param name="lParam">Message-specific parameter.</param>
 /// <returns>TRUE if the message was handled, FALSE otherwise.</returns>
-BOOL CALLBACK WOL_Download_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
+INT_PTR CALLBACK WOL_Download_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	switch (uMsg) {
 		case WM_COMMAND:
@@ -8042,7 +8042,7 @@ BOOL CALLBACK WOL_Download_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARA
 /// <param name="wParam">Message-specific first parameter.</param>
 /// <param name="lParam">Message-specific second parameter.</param>
 /// <returns>TRUE if the message was handled, FALSE otherwise.</returns>
-BOOL CALLBACK WOL_New_Game_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
+INT_PTR CALLBACK WOL_New_Game_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	switch (uMsg) {
 
@@ -8176,7 +8176,7 @@ BOOL CALLBACK WOL_New_Game_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARA
 /// <param name="wParam">Message-specific parameter.</param>
 /// <param name="lParam">Message-specific parameter.</param>
 /// <returns>TRUE if the message was handled, FALSE otherwise.</returns>
-BOOL CALLBACK WOL_Password_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
+INT_PTR CALLBACK WOL_Password_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	switch (uMsg) {
 		case WM_COMMAND: {
@@ -8226,7 +8226,7 @@ BOOL CALLBACK WOL_Password_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARA
 /// <param name="wParam">Message-specific parameter.</param>
 /// <param name="lParam">Message-specific parameter.</param>
 /// <returns>TRUE if the message was handled, FALSE otherwise.</returns>
-BOOL CALLBACK WOL_Begin_Nick_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
+INT_PTR CALLBACK WOL_Begin_Nick_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	switch (uMsg) {
 		case WM_COMMAND: {
@@ -8302,7 +8302,7 @@ BOOL CALLBACK WOL_Begin_Nick_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPA
 /// <param name="wParam">Message-specific parameter.</param>
 /// <param name="lParam">Message-specific parameter.</param>
 /// <returns>TRUE if the message was handled, FALSE otherwise.</returns>
-BOOL CALLBACK WOL_New_Nick_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
+INT_PTR CALLBACK WOL_New_Nick_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	switch (uMsg) {
 		case WM_COMMAND: {
@@ -8358,7 +8358,7 @@ BOOL CALLBACK WOL_New_Nick_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARA
 /// <param name="wParam">Message-specific parameter.</param>
 /// <param name="lParam">Message-specific parameter.</param>
 /// <returns>TRUE if the message was handled, FALSE otherwise.</returns>
-BOOL CALLBACK WOL_Options_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
+INT_PTR CALLBACK WOL_Options_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	static LONG sound_result = 0;
 
@@ -8378,7 +8378,7 @@ BOOL CALLBACK WOL_Options_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM
 					GameActive = false;
 					HWND dialog = WS_Create_Dialog(ProgramInstance, IDD_SOUND_OPTIONS_DIALOG_LITE, MainWindow, (DLGPROC)SoundControlsClass::Sound_Option_Dialog_Func, FALSE);
 					sound_result = 0;
-					SetWindowLong(dialog, DWL_USER, (LONG)&sound_result);
+					SetWindowLongPtr(dialog, DWLP_USER, reinterpret_cast<LONG_PTR>(&sound_result));
 					SendMessage(dialog, OD_SETTOP, 0, 1);
 					ShowWindow(dialog, SW_SHOWNORMAL);
 					SetFocus(dialog);
@@ -8434,7 +8434,7 @@ BOOL CALLBACK WOL_Options_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM
 /// <param name="wParam">Message-specific parameter.</param>
 /// <param name="lParam">Message-specific parameter.</param>
 /// <returns>TRUE if the message was handled, FALSE otherwise.</returns>
-BOOL CALLBACK WOL_New_Chat_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
+INT_PTR CALLBACK WOL_New_Chat_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	switch (uMsg) {
 		case WM_COMMAND: {
@@ -8490,7 +8490,7 @@ BOOL CALLBACK WOL_New_Chat_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARA
 /// <param name="wParam">Message-specific parameter.</param>
 /// <param name="lParam">Message-specific parameter.</param>
 /// <returns>TRUE or FALSE depending on the message handled; see individual cases.</returns>
-BOOL CALLBACK WOL_Game_Options_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
+INT_PTR CALLBACK WOL_Game_Options_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	int i;
 
@@ -9233,7 +9233,7 @@ BOOL CALLBACK WOL_Game_Options_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM l
 /// <param name="wParam">Message-specific parameter.</param>
 /// <param name="lParam">Message-specific parameter.</param>
 /// <returns>TRUE if the message was handled, FALSE otherwise.</returns>
-BOOL CALLBACK WOL_Guest_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
+INT_PTR CALLBACK WOL_Guest_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	if (WOL_Button_Bar_Proc(win, uMsg, wParam, lParam)) return(TRUE);
 
@@ -9452,7 +9452,7 @@ void Show_Wait_Window(unsigned int event, bool block, const char * text)
 /// <param name="wParam">Message-specific parameter.</param>
 /// <param name="lParam">Message-specific parameter.</param>
 /// <returns>TRUE if the message was handled, FALSE otherwise.</returns>
-BOOL CALLBACK WOL_Waiting_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
+INT_PTR CALLBACK WOL_Waiting_Dialog_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	switch (uMsg) {
 		case WM_COMMAND:
@@ -9885,8 +9885,8 @@ void Poke_The_Host(void)
 /*
  * WDT
  */
-BOOL CALLBACK Select_WDT_Server_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
-BOOL CALLBACK Select_WDT_Location_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
+INT_PTR CALLBACK Select_WDT_Server_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
+INT_PTR CALLBACK Select_WDT_Location_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
 /// <summary>
 /// Initializes World Domination Tour lobby state. Builds the list of selectable WDT lobby
@@ -10009,7 +10009,7 @@ int Select_WDT_Server(void)
 /// <param name="wParam">Message-specific parameter.</param>
 /// <param name="lParam">Message-specific parameter.</param>
 /// <returns>TRUE if the message was handled, FALSE otherwise.</returns>
-BOOL CALLBACK Select_WDT_Server_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
+INT_PTR CALLBACK Select_WDT_Server_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	static int firstserver = 0;
 	Server * server = NULL;
@@ -10130,7 +10130,7 @@ int Select_WDT_Location(HWND window)
 /// <param name="wParam">Message-specific WPARAM (control/notification id for WM_COMMAND).</param>
 /// <param name="lParam">Message-specific LPARAM.</param>
 /// <returns>TRUE if the message was handled, FALSE otherwise.</returns>
-BOOL CALLBACK Select_WDT_Location_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
+INT_PTR CALLBACK Select_WDT_Location_Proc(HWND win, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	int i = 0;
 	static int localecount = 0;

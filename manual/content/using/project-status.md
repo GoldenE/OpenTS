@@ -31,7 +31,7 @@ original game assets; an existing Tiberian Sun installation provides them.
 ## Toolchain and targets
 
 - CMake with Visual Studio 2022
-- 32-bit Windows
+- Win32 and x64 Windows targets
 - C++20
 - Debug and Release configurations
 

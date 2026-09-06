@@ -34,6 +34,14 @@
 #include "lzoconf.h"
 #include "lzo1x.h"
 
+#include <cstddef>
+
+// Literal runs add at most one control per byte plus a small end marker.
+constexpr std::size_t LZO_Compression_Bound(std::size_t length)
+{
+	return length * 2 + 64;
+}
+
 
 int lzo1x_1_compress ( 	const lzo_byte *in,
 								lzo_uint  in_len,

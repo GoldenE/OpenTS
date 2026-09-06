@@ -149,7 +149,7 @@ struct SampleTrackerType {
 	**	chunk of sample to
 	**
 	*/
-	void *DestPtr;
+	unsigned long DestOffset;
 
 	/*
 	**	This flag indicates that there is more source data
@@ -273,9 +273,6 @@ void	DPMI_Unlock(VOID const *ptr, int const size);
 extern "C" {
 	void __cdecl Audio_Mem_Set(void const *ptr, unsigned char value, int size);
 //	void	Mem_Copy(void *source, void *dest, unsigned long bytes_to_copy);
-	int  __cdecl Decompress_Frame(void * source, void * dest, int size);
-	int	__cdecl Decompress_Frame_Lock(void);
-	int	__cdecl Decompress_Frame_Unlock(void);
 	int	__cdecl sosCODEC_Lock(void);
 	int	__cdecl sosCODEC_Unlock(void);
 	void	__GETDS(void);

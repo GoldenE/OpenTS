@@ -81,16 +81,14 @@ Some handled cases call the base implementation before applying class-specific e
 
 ## Parameter channel
 
-The message parameter is an `int&`. It is used for both input and output:
+The message parameter is a `RadioParameter&`, where `RadioParameter` is `std::intptr_t`. It is used for both input and output:
 
 - `FootClass` returns its current `NavCom` through `RADIO_NEED_TO_MOVE`.
 - `RADIO_MOVE_HERE` interprets the value as an `ObjectClass*`.
 - `RADIO_ATTACK_THIS` interprets it as an `AbstractClass*`.
-- Building and aircraft handlers place cell or object pointers in it before sending a movement request.
+- Building, aircraft, and unit handlers place cell or object pointers in it before sending a movement request.
 
-:::danger[The parameter carries pointers]
-The implementation casts pointers through `int`. This is valid only under the supported 32-bit build. A pointer-width change requires a complete audit of radio senders and receivers; changing the signature alone is not sufficient.
-:::
+The parameter carries full-width pointers through every sender, receiver override, and the default `LParam` slot. Keep it pointer-sized when extending the protocol; storing a destination in an `int` first would truncate it on x64. This synchronous parameter channel is not a serialized radio field or a network packet.
 
 The overload without an explicit parameter passes the global `LParam` by reference. It is appropriate only for messages that do not consume or modify the parameter. Parameterized or nested protocols should use an explicit local value; otherwise a nested call can overwrite state shared with its caller.
 
