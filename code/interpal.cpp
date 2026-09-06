@@ -150,7 +150,6 @@ void Write_Interpolation_Palette (char const * palette_file_name)
 void Create_Palette_Interpolation_Table( void )
 {
 
-//	Asm_Create_Palette_Interpolation_Table();
 
 	#if (1)
 
@@ -350,7 +349,7 @@ void Interpolate_2X_Scale( Surface * source, Surface * dest , char const * palet
 		dest_width = 2*(dest->Stride());
 
 		/*
-		**	Call the appropriate assembly language copy routine
+		**	Call the selected indexed interpolation routine
 		*/
 #if (1)
 		switch (CopyType) {

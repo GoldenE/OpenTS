@@ -10,6 +10,8 @@
 #define INCLUDE_COM
 #include "always.h"
 
+#include <cstdint>
+
 #include "alphashp.h"
 
 #include "_alpha.h"
@@ -269,12 +271,12 @@ void AlphaShapeClass::Draw_In_Area(Point2D const & point, Rect const & cliprect)
 								*alphaptr = BrightnessTable[pixel][*alphaptr];
 							}
 							alphaptr++;
-							alphaptr = (unsigned short *)AlphaBuffer->Wrap_Overflow((unsigned)alphaptr);
+							alphaptr = (unsigned short *)AlphaBuffer->Wrap_Overflow((std::uintptr_t)alphaptr);
 						}
 						shapeptr += shape_skip;
 						maskptr += mask_skip;
 						alphaptr += alpha_skip;
-						alphaptr = (unsigned short *)AlphaBuffer->Wrap_Overflow((unsigned)alphaptr);
+						alphaptr = (unsigned short *)AlphaBuffer->Wrap_Overflow((std::uintptr_t)alphaptr);
 					}
 				} else {
 					for (int i = top; i < bottom; i++) {
@@ -346,11 +348,11 @@ void AlphaShapeClass::Draw_All(Rect const & cliprect)
 							unsigned char pixel = *shapeptr++;
 							*alphaptr = BrightnessTable[pixel][*alphaptr];
 							alphaptr++;
-							alphaptr = (unsigned short *)AlphaBuffer->Wrap_Overflow((unsigned)alphaptr);
+							alphaptr = (unsigned short *)AlphaBuffer->Wrap_Overflow((std::uintptr_t)alphaptr);
 						}
 						shapeptr += shape_skip;
 						alphaptr += alpha_skip;
-						alphaptr = (unsigned short *)AlphaBuffer->Wrap_Overflow((unsigned)alphaptr);
+						alphaptr = (unsigned short *)AlphaBuffer->Wrap_Overflow((std::uintptr_t)alphaptr);
 					}
 				} else {
 					for (int i = top; i < bottom; i++) {

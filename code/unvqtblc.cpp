@@ -167,7 +167,8 @@ void __cdecl UnVQ2_4x4_Table(unsigned char * codebook, unsigned char * pointers,
 								buffer += bufwidth;
 								--len;
 							}
-							buffer += 8 * count - blocks_per_rowa;
+							buffer -= blocks_per_rowa;
+							buffer += 8 * count;
 						}
 					} else {
 						buffer += 8 * count;
@@ -215,7 +216,8 @@ void __cdecl UnVQ2_4x4_Table(unsigned char * codebook, unsigned char * pointers,
 					--len;
 				}
 
-				buffer += 8 * count - blocks_per_rowa;
+				buffer -= blocks_per_rowa;
+				buffer += 8 * count;
 			}
 		} else {
 			switch (code) {
@@ -352,7 +354,8 @@ void __cdecl UnVQ2_4x2_Table(unsigned char * codebook, unsigned char * pointers,
 								buffer += 2 * bufwidth;
 								--len;
 							}
-							buffer += 8 * count - (int)(bufwidth << 2);
+							buffer -= (bufwidth << 2);
+							buffer += 8 * count;
 						}
 					} else {
 						buffer += 8 * count;
@@ -395,7 +398,8 @@ void __cdecl UnVQ2_4x2_Table(unsigned char * codebook, unsigned char * pointers,
 					--len;
 				}
 
-				buffer += 8 * count - (int)(bufwidth << 2);
+				buffer -= (bufwidth << 2);
+				buffer += 8 * count;
 			}
 		} else {
 			switch (code) {
@@ -690,7 +694,8 @@ void __cdecl UnVQ1_4x2_Table(unsigned char * codebook, unsigned char * pointers,
 							buffer += 2 * bufwidth;
 							--len;
 						} while (len);
-						buffer += 8 * scatter_count - (int)(bufwidth << 2);
+						buffer -= (bufwidth << 2);
+						buffer += 8 * scatter_count;
 					}
 					}
 				} else {
@@ -772,7 +777,8 @@ void __cdecl UnVQ1_4x2_Table(unsigned char * codebook, unsigned char * pointers,
 					buffer += 2 * bufwidth;
 				}
 
-				buffer += 8 * count - (int)(bufwidth << 2);
+				buffer -= (bufwidth << 2);
+				buffer += 8 * count;
 				break;
 			}
 			}

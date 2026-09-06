@@ -80,6 +80,7 @@
 #include "vector.h"
 #include "wsproto.h"
 #include "wspudp.h"
+#include "locallantest.hh"
 
 #include <algorithm>
 
@@ -212,9 +213,19 @@ void IPXManagerClass::Configure_LAN(unsigned short port)
 	}
 
 	UDPInterfaceClass *udp = new UDPInterfaceClass;
-	udp->Set_Local_Port(port);
-	udp->Set_Destination_Port(port);
-	udp->Enable_Broadcast(true);
+#ifdef _DEBUG
+	if (LoopbackLANTest.Enabled()) {
+		udp->Set_Local_Port(LoopbackLANTest.LocalPort);
+		udp->Set_Destination_Port(LoopbackLANTest.PeerPort);
+		udp->Enable_Broadcast(false);
+		udp->Set_Broadcast_Address(IPXAddressClass(htonl(LoopbackLANTestConfig::Address()), htons(LoopbackLANTest.PeerPort)));
+	} else
+#endif
+	{
+		udp->Set_Local_Port(port);
+		udp->Set_Destination_Port(port);
+		udp->Enable_Broadcast(true);
+	}
 
 	PacketTransport = udp;
 	TransportMode = TRANSPORT_LAN;

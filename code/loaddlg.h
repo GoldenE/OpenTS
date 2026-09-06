@@ -30,6 +30,8 @@
 
 #pragma once
 
+#include "architecture.hh"
+
 #include "session.h"
 
 #include "house.hh"
@@ -86,7 +88,7 @@ class LoadOptionsClass
 		 * share this value without promising that their saves interoperate.
 		 */
 		enum {
-			GAMEVER_OPENTS = OPENTS_VERSION_PACKED
+			GAMEVER_OPENTS = OPENTS_STATE_VERSION
 		};
 
 		LoadOptionsClass (void);

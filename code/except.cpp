@@ -419,10 +419,40 @@ static BOOL Guarded_Sym_Get_Line(DWORD_PTR address, DWORD * displacement, IMAGEH
 }
 
 
+static DWORD_PTR Context_Instruction_Pointer(CONTEXT const * context)
+{
+#if defined(_WIN64)
+	return(context->Rip);
+#else
+	return(context->Eip);
+#endif
+}
+
+
+static DWORD_PTR Context_Stack_Pointer(CONTEXT const * context)
+{
+#if defined(_WIN64)
+	return(context->Rsp);
+#else
+	return(context->Esp);
+#endif
+}
+
+
+static DWORD_PTR Context_Frame_Pointer(CONTEXT const * context)
+{
+#if defined(_WIN64)
+	return(context->Rbp);
+#else
+	return(context->Ebp);
+#endif
+}
+
+
 static BOOL Guarded_Stack_Walk(STACKFRAME64 * frame, CONTEXT * context)
 {
 	__try {
-		return(StackWalk64(IMAGE_FILE_MACHINE_I386, GetCurrentProcess(), GetCurrentThread(),
+		return(StackWalk64(sizeof(void *) == 8 ? IMAGE_FILE_MACHINE_AMD64 : IMAGE_FILE_MACHINE_I386, GetCurrentProcess(), GetCurrentThread(),
 					frame, context, NULL, SymFunctionTableAccess64, SymGetModuleBase64, NULL));
 	} __except (EXCEPTION_EXECUTE_HANDLER) {
 		return(FALSE);
@@ -606,17 +636,25 @@ static void Append_Exception_Description(EXCEPTION_RECORD const * record)
 static void Append_Registers(CONTEXT const * context)
 {
 	Exception_Printf("\r\nRegisters\r\n---------\r\n");
+#if defined(_WIN64)
+	Exception_Printf("Rip:%016llX  Rsp:%016llX  Rbp:%016llX\r\n", context->Rip, context->Rsp, context->Rbp);
+	Exception_Printf("Rax:%016llX  Rbx:%016llX  Rcx:%016llX\r\n", context->Rax, context->Rbx, context->Rcx);
+	Exception_Printf("Rdx:%016llX  Rsi:%016llX  Rdi:%016llX\r\n", context->Rdx, context->Rsi, context->Rdi);
+	Exception_Printf("R8:%016llX  R9:%016llX  R10:%016llX  R11:%016llX\r\n", context->R8, context->R9, context->R10, context->R11);
+	Exception_Printf("R12:%016llX  R13:%016llX  R14:%016llX  R15:%016llX\r\n", context->R12, context->R13, context->R14, context->R15);
+#else
 	Exception_Printf("Eip:%08X  Esp:%08X  Ebp:%08X\r\n", context->Eip, context->Esp, context->Ebp);
 	Exception_Printf("Eax:%08X  Ebx:%08X  Ecx:%08X\r\n", context->Eax, context->Ebx, context->Ecx);
 	Exception_Printf("Edx:%08X  Esi:%08X  Edi:%08X\r\n", context->Edx, context->Esi, context->Edi);
+#endif
 	Exception_Printf("EFlags:%08X\r\n", context->EFlags);
 	Exception_Printf("CS:%04X  SS:%04X  DS:%04X  ES:%04X  FS:%04X  GS:%04X\r\n",
 				context->SegCs, context->SegSs, context->SegDs, context->SegEs, context->SegFs, context->SegGs);
 
 	if ((context->ContextFlags & CONTEXT_DEBUG_REGISTERS) == CONTEXT_DEBUG_REGISTERS) {
-		Exception_Printf("Dr0:%08X  Dr1:%08X  Dr2:%08X  Dr3:%08X\r\n",
-					context->Dr0, context->Dr1, context->Dr2, context->Dr3);
-		Exception_Printf("Dr6:%08X  Dr7:%08X\r\n", context->Dr6, context->Dr7);
+		Exception_Printf("Dr0:%08IX  Dr1:%08IX  Dr2:%08IX  Dr3:%08IX\r\n",
+					(DWORD_PTR)context->Dr0, (DWORD_PTR)context->Dr1, (DWORD_PTR)context->Dr2, (DWORD_PTR)context->Dr3);
+		Exception_Printf("Dr6:%08IX  Dr7:%08IX\r\n", (DWORD_PTR)context->Dr6, (DWORD_PTR)context->Dr7);
 	}
 }
 
@@ -630,6 +668,22 @@ static void Append_Floating_Point(CONTEXT const * context)
 		return;
 	}
 
+#if defined(_WIN64)
+	auto const & save = context->FltSave;
+	Exception_Printf("\r\nFloating point\r\n--------------\r\n");
+	Exception_Printf("Control:%04X  Status:%04X  Tag:%02X  MXCSR:%08X\r\n", save.ControlWord, save.StatusWord, save.TagWord, context->MxCsr);
+	for (unsigned index = 0; index < 8; index++) {
+		BYTE const * bytes = reinterpret_cast<BYTE const *>(&save.FloatRegisters[index]);
+		Exception_Printf("ST%u : ", index);
+		for (int position = 9; position >= 0; position--) Exception_Printf("%02X", bytes[position]);
+		Exception_Printf("   %+.17e\r\n", Read_X87_Register(bytes));
+	}
+	for (unsigned index = 0; index < 16; index++) {
+		unsigned word[4];
+		memcpy(word, &save.XmmRegisters[index], sizeof(word));
+		Exception_Printf("XMM%u: %08X %08X %08X %08X\r\n", index, word[3], word[2], word[1], word[0]);
+	}
+#else
 	FLOATING_SAVE_AREA const & save = context->FloatSave;
 
 	Exception_Printf("\r\nFloating point\r\n--------------\r\n");
@@ -663,6 +717,7 @@ static void Append_Floating_Point(CONTEXT const * context)
 			Exception_Printf("XMM%u: %08X %08X %08X %08X\r\n", index, word[3], word[2], word[1], word[0]);
 		}
 	}
+#endif
 }
 
 
@@ -671,7 +726,7 @@ static void Append_Floating_Point(CONTEXT const * context)
 /// </summary>
 static void Append_Code_Bytes(CONTEXT const * context)
 {
-	BYTE const * const code = (BYTE const *)context->Eip;
+	BYTE const * const code = (BYTE const *)Context_Instruction_Pointer(context);
 
 	Exception_Printf("Bytes       : ");
 	for (unsigned index = 0; index < NUM_CODE_BYTES; index++) {
@@ -695,13 +750,16 @@ static void Append_Code_Bytes(CONTEXT const * context)
 /// </remarks>
 static void Append_Frame_Chain(CONTEXT const * context)
 {
+#if defined(_WIN64)
+	Exception_Printf("\r\nCall stack (frame chain)\r\n  <x64 uses the unwind-aware symbol walk>\r\n");
+#else
 	Exception_Printf("\r\nCall stack (frame chain)\r\n------------------------\r\n");
 
 	// The chain records return addresses, so the faulting instruction is not in it and is
 	// listed here for the two walks to start from the same place.
-	Append_Address((DWORD_PTR)context->Eip, "  ");
+	Append_Address((DWORD_PTR)Context_Instruction_Pointer(context), "  ");
 
-	DWORD_PTR const * frame = (DWORD_PTR const *)context->Ebp;
+	DWORD_PTR const * frame = (DWORD_PTR const *)Context_Frame_Pointer(context);
 	DWORD_PTR previous = 0;
 
 	for (unsigned depth = 0; depth < MAX_FRAME_DEPTH; depth++) {
@@ -721,6 +779,7 @@ static void Append_Frame_Chain(CONTEXT const * context)
 		previous = (DWORD_PTR)frame;
 		frame = (DWORD_PTR const *)frame[0];
 	}
+#endif
 }
 
 
@@ -742,11 +801,11 @@ static void Append_Call_Stack(CONTEXT const * context)
 
 	STACKFRAME64 frame;
 	memset(&frame, 0, sizeof(frame));
-	frame.AddrPC.Offset = working.Eip;
+	frame.AddrPC.Offset = Context_Instruction_Pointer(&working);
 	frame.AddrPC.Mode = AddrModeFlat;
-	frame.AddrFrame.Offset = working.Ebp;
+	frame.AddrFrame.Offset = Context_Frame_Pointer(&working);
 	frame.AddrFrame.Mode = AddrModeFlat;
-	frame.AddrStack.Offset = working.Esp;
+	frame.AddrStack.Offset = Context_Stack_Pointer(&working);
 	frame.AddrStack.Mode = AddrModeFlat;
 
 	for (unsigned depth = 0; depth < MAX_FRAME_DEPTH; depth++) {
@@ -809,7 +868,7 @@ static void Append_Stack_Dump(CONTEXT const * context)
 	Exception_Printf("\r\nStack dump (* marks a possible code address)\r\n");
 	Exception_Printf("-------------------------------------------\r\n");
 
-	DWORD_PTR const * const stack = (DWORD_PTR const *)context->Esp;
+	DWORD_PTR const * const stack = (DWORD_PTR const *)Context_Stack_Pointer(context);
 
 	for (unsigned index = 0; index < MAX_STACK_DUMP; index++) {
 		DWORD_PTR const * const slot = stack + index;
@@ -851,7 +910,7 @@ static void Guarded_Crash_Site(CONTEXT const * context)
 {
 	__try {
 		Exception_Printf("\r\nCrash site\r\n----------\r\n");
-		Append_Address((DWORD_PTR)context->Eip, "Address     : ");
+		Append_Address((DWORD_PTR)Context_Instruction_Pointer(context), "Address     : ");
 		Append_Code_Bytes(context);
 	} __except (EXCEPTION_EXECUTE_HANDLER) {
 		Exception_Printf("  <crash site faulted>\r\n");

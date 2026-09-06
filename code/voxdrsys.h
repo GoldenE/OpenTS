@@ -128,7 +128,7 @@ extern VoxelRenderOrientation VoxelRenderOrientations[VOXEL_BOUNDS_COUNT];
 
 /*
  * Struct used to pass data to the low-level voxel drawing functions.
- * WARNING: If you modify this struct you must update the struct in WINASM.ASM!
+ * Native pointers refer to the decoded voxel spans; these are not persisted file offsets.
  */
 struct VoxelFuncArgumentStruct {
 	/*

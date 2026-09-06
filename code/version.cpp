@@ -152,7 +152,7 @@ unsigned int VersionClass::Version_Number(void)
 	//------------------------------------------------------------------------
 	// Generate the version #
 	//------------------------------------------------------------------------
-	Version = ((Major_Version() << 16) | Minor_Version());
+	Version = ((Major_Version() << 16) | Minor_Version()) | OPENTS_ARCHITECTURE_STAMP;
 	VersionInit = 1;
 
 	return(Version);

@@ -1,0 +1,7 @@
+# VQA frame drawer checks
+
+`VQADrawersTest` compiles the production C++ UnVQ routines, the hicolor table drawer bodies, `VQA_UnVQFrame`, and `VQA_Set_DrawBuffer`. Fourteen cases cover direct C1/C4 key and delta frames, 4x2/4x4 blocks, palette-byte key/transparent/half drawers, and hicolor table/alternate-row drawers. Each fixture spans multiple commands and two block rows, including data after a rewind, masked pixels, skipped blocks, solid colors, and untouched row/allocation padding. Expected pixels are painted independently from the command decoder; a surface-lock callback supplies the native pointer and pitch through the real dispatcher.
+
+On Win32, each case also compares every byte with the corresponding frozen function from commit `56a6f99`. Those reference bodies retain the old unsigned rewind arithmetic and are excluded on x64. The production correction subtracts row strides separately from horizontal advances, preventing an unsigned 32-bit negative displacement from becoming a 4 GiB forward pointer jump on x64. Existing Win32 fixture output remains unchanged.
+
+Build `VQADrawersTest` and run `ctest --test-dir <build> -C <Debug|Release> -R '^vqadrawers$' --output-on-failure` on each architecture. The fixtures contain no game assets and check raster bytes rather than screenshots or hashes. They do not establish movie/audio playback or cover malformed command streams or every opcode combination.

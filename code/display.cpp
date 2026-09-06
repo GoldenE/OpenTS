@@ -3444,12 +3444,8 @@ int DisplayClass::Stash_Map_State(void * stash, int)
 		(*(unsigned char *)data) = cptr->IsIceGrowthAllowed;
 		data += sizeof(cptr->IsIceGrowthAllowed);
 
+		// The legacy stash reader consumes this slot without restoring a tag.
 		unsigned int tag = 0;
-		if (cptr->Tag != NULL) {
-			if (cptr->Tag->Class != NULL) {
-				tag = (unsigned int)cptr->Tag->Class;
-			}
-		}
 
 		(*(unsigned int *)data) = tag;
 		data += sizeof(tag);

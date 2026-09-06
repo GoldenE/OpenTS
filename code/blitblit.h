@@ -43,7 +43,7 @@
 **	the game engine must support both 16 bit and 8 bit pixel formats. Some of these
 **	blitter objects are templates (this reduces the need for both 8 and 16 bit
 **	counterparts if the algorithm is constant between pixel formats). Also note
-**	that there are some assembly implementations where it seems appropriate.
+**	that there are specialized implementations where it seems appropriate.
 **
 **	If the blitter object has "Xlat" in the name, then this means that the source
 **	pixel is 8 bit and the destination pixel is 16 bit (probably). This hybrid system
@@ -2309,179 +2309,14 @@ class BlitTranslucentWriteAlpha : public Blitter {
 };
 
 
-/*
-**	Assembly versions of some of the templated blitter object functions. Borland and
-**	Visual C++ support a compatible inline-assembly formats. However, Borland compiler
-**	does not allow inline-assembly to be part of an inline function -- go figure.
-**	It will still compile, it just generates warning messages.
-*/
-#if defined(_MSC_VER)
-
-#pragma optimize("", off)
-
-template <>
-inline void BlitTrans<unsigned char>::BlitForward(void * dest, void const * source, int len, int z_min, void *z_buff, void *a_buff, int alpha_level, int warp_offset) const
-{
-	__asm {
-		mov	esi,[source]
-		mov	edi,[dest]
-		mov	ecx,[len]
-		dec	edi
-		inc	ecx
-	}
-again:
-	__asm {
-		dec	ecx
-		jz		fini
-		mov	al,[esi]
-		inc	edi
-		inc	esi
-		test	al,al
-		jz		again
-		mov	[edi],al
-		jmp	again
-	}
-fini:;
-}
-
-
-template <>
-inline void BlitTransXlat<unsigned short>::BlitForward(void * dest, void const * source, int len, int z_min, void *z_buff, void *a_buff, int alpha_level, int warp_offset) const
-{
-	unsigned short const * xlator = TranslateTable;
-
-	__asm {
-		mov	ebx,[xlator]
-		mov	ecx,[len]
-		inc	ecx
-		mov	edi,[dest]
-		sub	edi,2
-		mov	esi,[source]
-		xor	eax,eax
-	}
-again:
-	__asm {
-		dec	ecx
-		jz		over
-		add	edi,2
-		mov	al,[esi]
-		inc	esi
-		or		al,al
-		jz		again
-		mov	dx,[ebx+eax*2]
-		mov	[edi],dx
-		jmp	again
-	}
-over:;
-}
-
-
+// Preserve the inherited 16-bit remap span length; the last source pixel is not drawn.
 template <>
 inline void BlitTransRemapXlat<unsigned short>::BlitForward(void * dest, void const * source, int len, int z_min, void *z_buff, void *a_buff, int alpha_level, int warp_offset) const
 {
-	unsigned short const * translator = TranslateTable;
-	unsigned char const * remapper = RemapTable;
-
-	__asm {
-		mov	ecx,[len]
-		mov	edi,[dest]
-		sub	edi,2
-		mov	esi,[source]
-		mov	ebx,[remapper]
-		mov	edx,[translator]
-		xor	eax,eax
-	}
-
-	/*
-	**	This block is 11 cycles per pixel, if not transparent, and 5
-	**	cycles per pixel, if transparent.
-	*/
-again:
-	__asm {
-		dec	ecx
-		jz		over
-		add	edi,2
-		xor	eax,eax
-		lodsb
-		or		al,al
-		jz		again
-		mov	al,[ebx+eax]				// First remap step (8 bit to 8 bit).
-		mov	ax,[edx+eax*2]				// Second remap step (8 bit to 16 bit).
-		mov	[edi],ax
-		jmp	again
-	}
-over:;
-}
-
-
-#if 0
-template <>
-inline void BlitTransZRemapXlat<unsigned short>::BlitForward(void * dest, void const * source, int len, int z_min, void *z_buff, void *a_buff, int alpha_level, int warp_offset) const
-{
-	unsigned short const * translator = TranslateTable;
-	unsigned char const * remapper = *RemapTable;
-
-	__asm {
-		mov	ecx,[len]
-		mov	edi,[dest]
-		sub	edi,2
-		mov	esi,[source]
-		mov	ebx,[remapper]
-		mov	edx,[translator]
-		xor	eax,eax
-	}
-
-	/*
-	**	This block is 11 cycles per pixel, if not transparent, and 5
-	**	cycles per pixel, if transparent.
-	*/
-again:
-	__asm {
-		dec	ecx
-		jz		over
-		add	edi,2
-		xor	eax,eax
-		lodsb
-		or		al,al
-		jz		again
-		mov	al,[ebx+eax]				// First remap step (8 bit to 8 bit).
-		mov	ax,[edx+eax*2]				// Second remap step (8 bit to 16 bit).
-		mov	[edi],ax
-		jmp	again
-	}
-over:;
-}
-
-
-template <>
-inline void BlitPlainXlat<unsigned short>::BlitForward(void * dest, void const * source, int len, int z_min, void *z_buff, void *a_buff, int alpha_level, int warp_offset) const
-{
-	unsigned short const * remapper = TranslateTable;
-	__asm {
-		mov	ebx,[remapper]
-		mov	ecx,[len]
-		mov	esi,[source]
-		mov	edi,[dest]
-		sub	edi,2
-	}
-again:
-	/*
-	**	This block processes pixels at 7 clocks per pixel.
-	*/
-	__asm {
-		xor	eax,eax
-		add	edi,2
-		mov	al,[esi]
-		inc	esi
-		mov	ax,[ebx+eax*2]
-		mov	[edi],ax
-		dec	ecx
-		jnz	again
+	auto const * input = static_cast<unsigned char const *>(source);
+	auto * output = static_cast<unsigned short *>(dest);
+	for (int index = 0; index + 1 < len; ++index) {
+		unsigned char color = input[index];
+		if (color != 0) output[index] = TranslateTable[RemapTable[color]];
 	}
 }
-
-
-#endif
-#endif
-
-#pragma optimize("", on)

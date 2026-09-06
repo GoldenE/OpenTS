@@ -6958,8 +6958,9 @@ void HouseClass::Make_Base_Nodes(void)
 
 	for (index = 0; index < finalqueue.Count(); index++) {
 		BuildingTypeClass const * b = finalqueue[index];
-		if ((int)b < 0 && (int)b >= -3) {
-			Base.Nodes.Add(BaseNodeClass((StructType)(int)b, Cell(0, 0)));
+		intptr_t const encoded_type = reinterpret_cast<intptr_t>(b);
+		if (encoded_type < 0 && encoded_type >= -3) {
+			Base.Nodes.Add(BaseNodeClass(static_cast<StructType>(encoded_type), Cell(0, 0)));
 		} else {
 			Base.Nodes.Add(BaseNodeClass(b->HeapID, Cell(0, 0)));
 		}

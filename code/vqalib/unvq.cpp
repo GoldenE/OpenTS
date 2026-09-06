@@ -12,6 +12,73 @@
  ******************************************************************************/
 
 #include <string.h>
+#include "unvq.h"
+#include "_vqa.h"
+
+namespace {
+void Expand_Indexed_Block(unsigned char * codebook, unsigned char * pointers, unsigned char * buffer, unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth, unsigned height, bool hicolor, bool table, bool alternate, bool half)
+{
+	unsigned long entries = blocksperrow * numrows;
+	unsigned pixel_bytes = hicolor ? 2 : 1;
+	unsigned width = half ? 2 : 4;
+	unsigned output_height = half ? 2 : height;
+	unsigned long pitch = bufwidth * pixel_bytes;
+	for (unsigned long row = 0; row < numrows; ++row) {
+		for (unsigned long column = 0; column < blocksperrow; ++column) {
+			unsigned long entry = row * blocksperrow + column;
+			unsigned index = pointers[entry] | (pointers[entry + entries] << 8);
+			bool solid = hicolor ? (index & 0x8000) != 0 : (index >> 8) == 255;
+			unsigned color = hicolor ? index & 0x7fff : index & 255;
+			if (solid && table) color = HicolorTable[color];
+			auto * dest = buffer + row * output_height * pitch + column * width * pixel_bytes;
+			for (unsigned y = 0; y < output_height; y += alternate ? 2 : 1) {
+				for (unsigned x = 0; x < width; ++x) {
+					for (unsigned byte = 0; byte < pixel_bytes; ++byte) {
+						unsigned offset = ((half ? y * 2 : y) * 4 + (half ? x * 2 : x)) * pixel_bytes + byte;
+						dest[y * pitch + x * pixel_bytes + byte] = solid ? static_cast<unsigned char>(color >> (8 * byte)) : codebook[index * height * 4 * pixel_bytes + offset];
+					}
+				}
+			}
+		}
+	}
+}
+}
+
+
+void __cdecl ASM_UnVQ1_C1_TABLE(unsigned char * codebook, unsigned char * pointers, unsigned char * buffer, unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth)
+{
+	Expand_Indexed_Block(codebook, pointers, buffer, blocksperrow, numrows, bufwidth, 4, true, true, false, false);
+}
+
+
+void __cdecl ASM_UnVQ1_C1_TABLE_ALT(unsigned char * codebook, unsigned char * pointers, unsigned char * buffer, unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth)
+{
+	Expand_Indexed_Block(codebook, pointers, buffer, blocksperrow, numrows, bufwidth, 4, true, true, true, false);
+}
+
+
+void __cdecl ASM_UnVQ1_C1_4x4(unsigned char * codebook, unsigned char * pointers, unsigned char * buffer, unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth)
+{
+	Expand_Indexed_Block(codebook, pointers, buffer, blocksperrow, numrows, bufwidth, 4, true, false, false, false);
+}
+
+
+void __cdecl ASM_UnVQ_4x2(unsigned char * codebook, unsigned char * pointers, unsigned char * buffer, unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth)
+{
+	Expand_Indexed_Block(codebook, pointers, buffer, blocksperrow, numrows, bufwidth, 2, false, false, false, false);
+}
+
+
+void __cdecl ASM_UnVQ_4x4(unsigned char * codebook, unsigned char * pointers, unsigned char * buffer, unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth)
+{
+	Expand_Indexed_Block(codebook, pointers, buffer, blocksperrow, numrows, bufwidth, 4, false, false, false, false);
+}
+
+
+void __cdecl ASM_UnVQ_4x4_HALF(unsigned char * codebook, unsigned char * pointers, unsigned char * buffer, unsigned long blocksperrow, unsigned long numrows, unsigned long bufwidth)
+{
+	Expand_Indexed_Block(codebook, pointers, buffer, blocksperrow, numrows, bufwidth, 4, false, false, false, true);
+}
 
 typedef signed char int8_t;
 typedef signed short int16_t;
@@ -133,7 +200,8 @@ void __cdecl UnVQ2_C1_4x4(unsigned char * codebook, unsigned char * pointers, un
 			}
 
 			/* final pointer correction: dst += count*8 - bufwidth*4 */
-			dst += (count * 8u) - block_row_stride;
+			dst -= block_row_stride;
+			dst += (count * 8u);
 		} break;
 
 		case 0x3000u: {
@@ -168,7 +236,8 @@ void __cdecl UnVQ2_C1_4x4(unsigned char * codebook, unsigned char * pointers, un
 				dst += bufwidth;
 			}
 
-			dst += 8u * count - block_row_stride;
+			dst -= block_row_stride;
+			dst += 8u * count;
 		} break;
 
 
@@ -330,7 +399,8 @@ void __cdecl UnVQ1_C4_4x4(unsigned char * codebook, unsigned char * pointers, un
 				dst += bufwidth;
 			}
 
-			dst += 8u - block_row_stride;
+			dst -= block_row_stride;
+			dst += 8u;
 		} break;
 
 		/* ------------------------------------------------------------ */
@@ -356,7 +426,8 @@ void __cdecl UnVQ1_C4_4x4(unsigned char * codebook, unsigned char * pointers, un
 				dst += bufwidth;
 			}
 
-			dst += 8u - block_row_stride;
+			dst -= block_row_stride;
+			dst += 8u;
 		} break;
 
 		/* ------------------------------------------------------------ */
@@ -497,7 +568,8 @@ void __cdecl UnVQ2_C4_4x4(unsigned char * codebook, unsigned char * pointers, un
 				dst += bufwidth;
 			}
 
-			dst += 8u - block_row_stride;
+			dst -= block_row_stride;
+			dst += 8u;
 		} break;
 
 		/* ------------------------------------------------------------ */
@@ -531,7 +603,8 @@ void __cdecl UnVQ2_C4_4x4(unsigned char * codebook, unsigned char * pointers, un
 				dst += bufwidth;
 			}
 
-			dst += 8u * height - block_row_stride;
+			dst -= block_row_stride;
+			dst += 8u * height;
 		} break;
 
 		/* ------------------------------------------------------------ */
@@ -579,7 +652,8 @@ void __cdecl UnVQ2_C4_4x4(unsigned char * codebook, unsigned char * pointers, un
 					dst += bufwidth;
 				}
 
-				dst += 8u * height - block_row_stride;
+				dst -= block_row_stride;
+				dst += 8u * height;
 			}
 			break;
 
@@ -603,7 +677,8 @@ void __cdecl UnVQ2_C4_4x4(unsigned char * codebook, unsigned char * pointers, un
 				dst += bufwidth;
 			}
 
-			dst += 8u - block_row_stride;
+			dst -= block_row_stride;
+			dst += 8u;
 		} break;
 		}
 
@@ -662,7 +737,8 @@ void __cdecl UnVQ1_C4_4x2(unsigned char * codebook, unsigned char * pointers, un
 				dst += bufwidth;
 			}
 
-			dst += 8u - block_row_stride;
+			dst -= block_row_stride;
+			dst += 8u;
 		} break;
 
 		/* ------------------------------------------------------------ */
@@ -688,7 +764,8 @@ void __cdecl UnVQ1_C4_4x2(unsigned char * codebook, unsigned char * pointers, un
 				dst += bufwidth;
 			}
 
-			dst += 8u - block_row_stride;
+			dst -= block_row_stride;
+			dst += 8u;
 		} break;
 
 		/* ------------------------------------------------------------ */
@@ -831,7 +908,8 @@ void __cdecl UnVQ2_C4_4x2(unsigned char * codebook, unsigned char * pointers, un
 				dst += bufwidth;
 			}
 
-			dst += 8u - block_row_stride;
+			dst -= block_row_stride;
+			dst += 8u;
 		} break;
 
 		/* ------------------------------------------------------------ */
@@ -864,7 +942,8 @@ void __cdecl UnVQ2_C4_4x2(unsigned char * codebook, unsigned char * pointers, un
 				dst += bufwidth;
 			}
 
-			dst += 8u * height - block_row_stride;
+			dst -= block_row_stride;
+			dst += 8u * height;
 		} break;
 
 		/* ------------------------------------------------------------ */
@@ -912,7 +991,8 @@ void __cdecl UnVQ2_C4_4x2(unsigned char * codebook, unsigned char * pointers, un
 					dst += bufwidth;
 				}
 
-				dst += 8u * height - block_row_stride;
+				dst -= block_row_stride;
+				dst += 8u * height;
 			}
 			break;
 
@@ -936,7 +1016,8 @@ void __cdecl UnVQ2_C4_4x2(unsigned char * codebook, unsigned char * pointers, un
 				dst += bufwidth;
 			}
 
-			dst += 8u - block_row_stride;
+			dst -= block_row_stride;
+			dst += 8u;
 		} break;
 		}
 

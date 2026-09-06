@@ -107,9 +107,7 @@ CMake's `OPENTS_VERSION_PRERELEASE`, which is empty when the development version
 has no label. The private npm package version is tooling metadata, not the
 OpenTS release.
 
-The engine stamps its saves and network sessions with that version. Opening a
-cycle therefore retires the previous cycle's saves, while snapshots produced
-during one active cycle share a stamp and have no interoperability promise.
+The engine stamps its saves and network sessions with that version and the target architecture. Opening a cycle therefore retires the previous cycle's saves, while snapshots produced during one active cycle and architecture share a stamp and have no interoperability promise.
 Several compatibility-breaking changes may accumulate before that cycle is
 released. See [Compatibility boundaries](../CONTRIBUTING.md).
 
@@ -118,8 +116,7 @@ To publish a release:
 1. Confirm the development entry names the version being released and that the
    commit to be tagged carries everything the release ships.
 2. Create and publish the GitHub release from a tag `v<version>` on that
-   commit. The `Engine release` workflow builds the tag, attaches the packaged
-   zip, and appends the output of
+   commit. The `Engine release` workflow builds the tag for Win32 and x64, attaches separate `OpenTS-<tag>-Win32.zip` and `OpenTS-<tag>-x64.zip` archives, and appends the output of
    `python manual/tools/manage.py release-notes <version>` to the release
    body.
 3. Open the next development cycle only after tagging, so the tag points at a

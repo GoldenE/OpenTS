@@ -100,3 +100,7 @@ effects, with matching used to establish the starting behavior — not as a
 correctness gate the result must pass.
 
 OpenTS published its first release, 0.1.0, on 27 August 2026.
+
+## Native x64 development
+
+The active tree adds native x64 Windows builds while retaining Win32. Portable C++ replaces the remaining production x86 assembly, with synthetic input/output records captured from the Win32 implementations before retirement. Pointer-width corrections keep runtime addresses separate from fixed-width game-data records; saves, recordings, and network identities distinguish incompatible native layouts. The supported configurations and verification boundary are owned by [Building OpenTS](BUILDING.md), and [Runtime testing](TESTING.md) owns live validation.

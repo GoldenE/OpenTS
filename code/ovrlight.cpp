@@ -29,14 +29,13 @@
 
 DynamicVectorClass<SpotLightClass *> SpotLights;
 
-int SpotLightDontUseMMX = false;
 int SpotLightColorMode = -1;
 int *SpotLightMMXBuffer;
 BSurface *SpotLightSurfaces[SpotLightClass::SPOTLIGHT_SURFACE_COUNT + SpotLightClass::SPOTLIGHT_EXTRA_SURFACE_COUNT];
 
 extern "C" {
 /*
- * Externs to assembly routines from winasm.asm
+ * Portable palette and spotlight routines.
  */
 void __cdecl Adjust_Color_565(void *pal1, void *pal2, int red, int green, int blue, int intensity, char *arg7);
 void __cdecl Adjust_Color_555(void *pal1, void *pal2, int red, int green, int blue, int intensity, char *arg7);
@@ -240,63 +239,59 @@ void SpotLightClass::Draw_It(void)
 				unsigned char *sptr_row = sptr;
 				unsigned short *dptr_row = dptr;
 
-				if (SpotLightDontUseMMX != 1) {
-					switch (SpotLightColorMode) {
+				switch (SpotLightColorMode) {
 
-						case COLORMODE_555:
-							if (SpotLightMMXBuffer) {
-								MMX_Brighten_Color_555(sptr, dptr, 256, stride, srect.Width, srect.Height, SpotLightMMXBuffer);
-							} else {
-								Brighten_Color_555(sptr, dptr, 256, stride, srect.Width, srect.Height);
-							}
-							break;
-
-						case COLORMODE_556:
-							if (SpotLightMMXBuffer) {
-								MMX_Brighten_Color_556(sptr, dptr, 256, stride, srect.Width, srect.Height, SpotLightMMXBuffer);
-							} else {
-								Brighten_Color_556(sptr, dptr, 256, stride, srect.Width, srect.Height);
-							}
-							break;
-
-						case COLORMODE_565:
-							if (SpotLightMMXBuffer) {
-								MMX_Brighten_Color_565(sptr, dptr, 256, stride, srect.Width, srect.Height, SpotLightMMXBuffer);
-							} else {
-								Brighten_Color_565(sptr, dptr, 256, stride, srect.Width, srect.Height);
-							}
-							break;
-
-						case COLORMODE_655:
-							if (SpotLightMMXBuffer) {
-								MMX_Brighten_Color_655(sptr, dptr, 256, stride, srect.Width, srect.Height, SpotLightMMXBuffer);
-							} else {
-								Brighten_Color_655(sptr, dptr, 256, stride, srect.Width, srect.Height);
-							}
-							break;
-
-						default:
-							goto fallback;
-					}
-				} else {
-					fallback:
-					for (int y = 0; y < srect.Height; y++) {
-						for (int x = 0; x < srect.Width; x++) {
-							unsigned char spixel = *sptr++;
-							if (spixel != 0) {
-								unsigned short dpixel = *dptr;
-								RGBClass rgb = DSurface::Deconstruct_Hicolor_Pixel(dpixel);
-								int rr = rgb.Get_Red() + ((rgb.Get_Red() * spixel) >> 8);
-								int gg = rgb.Get_Green() + ((rgb.Get_Green() * spixel) >> 8);
-								int bb = rgb.Get_Blue() + ((rgb.Get_Blue() * spixel) >> 8);
-								*dptr = DSurface::Build_Hicolor_Pixel(std::min(255, rr), std::min(255, gg), std::min(255, bb));
-							}
-							dptr++;
+					case COLORMODE_555:
+						if (SpotLightMMXBuffer) {
+							MMX_Brighten_Color_555(sptr, dptr, 256, stride, srect.Width, srect.Height, SpotLightMMXBuffer);
+						} else {
+							Brighten_Color_555(sptr, dptr, 256, stride, srect.Width, srect.Height);
 						}
-						sptr_row += 256;
-						sptr = sptr_row;
-						dptr_row = (unsigned short *)((unsigned char *)dptr_row + stride);
-						dptr = dptr_row;
+						break;
+
+					case COLORMODE_556:
+						if (SpotLightMMXBuffer) {
+							MMX_Brighten_Color_556(sptr, dptr, 256, stride, srect.Width, srect.Height, SpotLightMMXBuffer);
+						} else {
+							Brighten_Color_556(sptr, dptr, 256, stride, srect.Width, srect.Height);
+						}
+						break;
+
+					case COLORMODE_565:
+						if (SpotLightMMXBuffer) {
+							MMX_Brighten_Color_565(sptr, dptr, 256, stride, srect.Width, srect.Height, SpotLightMMXBuffer);
+						} else {
+							Brighten_Color_565(sptr, dptr, 256, stride, srect.Width, srect.Height);
+						}
+						break;
+
+					case COLORMODE_655:
+						if (SpotLightMMXBuffer) {
+							MMX_Brighten_Color_655(sptr, dptr, 256, stride, srect.Width, srect.Height, SpotLightMMXBuffer);
+						} else {
+							Brighten_Color_655(sptr, dptr, 256, stride, srect.Width, srect.Height);
+						}
+						break;
+
+					default: {
+						for (int y = 0; y < srect.Height; y++) {
+							for (int x = 0; x < srect.Width; x++) {
+								unsigned char spixel = *sptr++;
+								if (spixel != 0) {
+									unsigned short dpixel = *dptr;
+									RGBClass rgb = DSurface::Deconstruct_Hicolor_Pixel(dpixel);
+									int rr = rgb.Get_Red() + ((rgb.Get_Red() * spixel) >> 8);
+									int gg = rgb.Get_Green() + ((rgb.Get_Green() * spixel) >> 8);
+									int bb = rgb.Get_Blue() + ((rgb.Get_Blue() * spixel) >> 8);
+									*dptr = DSurface::Build_Hicolor_Pixel(std::min(255, rr), std::min(255, gg), std::min(255, bb));
+								}
+								dptr++;
+							}
+							sptr_row += 256;
+							sptr = sptr_row;
+							dptr_row = (unsigned short *)((unsigned char *)dptr_row + stride);
+							dptr = dptr_row;
+						}
 					}
 				}
 				dsurf->Unlock();

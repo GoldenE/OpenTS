@@ -93,6 +93,7 @@
 #include "levitate.h"
 #include "light.h"
 #include "lightcon.h"
+#include "locallantest.hh"
 #include "mech.h"
 #include "mixfile.h"
 #include "misc.h"
@@ -158,6 +159,7 @@
 #include <conio.h>
 #include <io.h>
 #include <cfloat>
+#include <cstdlib>
 
 extern	HINSTANCE LanguageResources;
 
@@ -390,13 +392,30 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * command_line , in
 	// thread that crashed may be the one holding the logger's lock.
 	Exception_Register_Log_File(Debug_Log_File_Name());
 
+	char const * app_mutex_name = APP_GUID;
+	char const * autoplay_mutex_name = AUTOPLAY_GUID;
+#ifdef _DEBUG
+	if (!Parse_Loopback_LAN_Test(std::getenv("OPENTS_DEBUG_LAN_PORTS"), LoopbackLANTest)) {
+		DebugString("Invalid OPENTS_DEBUG_LAN_PORTS; startup aborted.\n");
+		MessageBoxA(NULL, "OPENTS_DEBUG_LAN_PORTS requires two distinct decimal ports from 1024 through 65535, separated by one comma.", "OpenTS loopback LAN test", MB_OK | MB_ICONERROR);
+		return EXIT_FAILURE;
+	}
+	std::string app_test_name = LoopbackLANTest.Mutex_Name(APP_GUID);
+	std::string autoplay_test_name = LoopbackLANTest.Mutex_Name(AUTOPLAY_GUID);
+	app_mutex_name = app_test_name.c_str();
+	autoplay_mutex_name = autoplay_test_name.c_str();
+	if (LoopbackLANTest.Enabled()) {
+		DebugString("Loopback LAN test: local=127.0.0.1:%u peer=127.0.0.1:%u\n", static_cast<unsigned>(LoopbackLANTest.LocalPort), static_cast<unsigned>(LoopbackLANTest.PeerPort));
+	}
+#endif
+
 	/*
 	 * Create a mutex with a unique name to TibSun in order to determine if
 	 * our app is already running.
 	 *
 	 * WARNING: DO NOT use this number for any other application except TibSun
 	 */
-	AppMutex = ::CreateMutex (NULL, FALSE, APP_GUID);
+	AppMutex = ::CreateMutex (NULL, FALSE, app_mutex_name);
 
 	//
 	// Is there already an instance of this app somewhere?
@@ -405,7 +424,11 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * command_line , in
 		//
 		// Find the previous instance
 		//
-		HWND main_wnd = ::FindWindow (APP_GUID, NULL);
+		HWND main_wnd = NULL;
+#ifdef _DEBUG
+		if (!LoopbackLANTest.Enabled())
+#endif
+		main_wnd = ::FindWindow (APP_GUID, NULL);
 		if (main_wnd != NULL) {
 			::SetForegroundWindow (main_wnd);
 			::ShowWindow (main_wnd, SW_RESTORE);
@@ -430,7 +453,7 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * command_line , in
 			//
 			// Attempt to open the mutex
 			//
-			AutoPlayMutex = ::OpenMutex (MUTEX_ALL_ACCESS, FALSE, AUTOPLAY_GUID);
+			AutoPlayMutex = ::OpenMutex (MUTEX_ALL_ACCESS, FALSE, autoplay_mutex_name);
 			if (AutoPlayMutex != NULL) {
 				DebugString( "Waiting for Autoplay to quit!\n");
 				if (::WaitForSingleObject (AutoPlayMutex, 30000) == WAIT_FAILED) {
@@ -446,7 +469,7 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * command_line , in
 			 * TibSun needs both of these mutexs before it is allowed to run.
 			 */
 			if (AutoPlayMutex == NULL) {
-				AutoPlayMutex = CreateMutex (NULL, FALSE, AUTOPLAY_GUID);
+				AutoPlayMutex = CreateMutex (NULL, FALSE, autoplay_mutex_name);
 				if (GetLastError () == ERROR_ALREADY_EXISTS) {
 					CloseHandle (AutoPlayMutex);
 					AutoPlayMutex = NULL;

@@ -24,6 +24,7 @@
 #include "house.hh"
 #include "land.hh"
 #include "mission.hh"
+#include "radio.hh"
 #include "source.hh"
 #include "special.hh"
 #include "speed.hh"
@@ -254,7 +255,7 @@ extern bool							drag_select_aborted;
 
 extern GroundType  				Ground[LAND_COUNT];
 
-extern int LParam;
+extern RadioParameter LParam;
 
 /*
 **	Constant externs (data is not modified during game play).

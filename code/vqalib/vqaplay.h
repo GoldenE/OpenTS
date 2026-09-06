@@ -13,6 +13,7 @@
 
 #ifndef VQAPLAY_H
 #define VQAPLAY_H
+#include <cstdint>
 /****************************************************************************
 *
 *         C O N F I D E N T I A L -- W E S T W O O D  S T U D I O S
@@ -162,6 +163,7 @@ typedef void  (__cdecl *UNVQ_FUNC)(unsigned char *codebook, unsigned char *point
 
 // Handlers must be this type
 typedef long (__cdecl *VQA_H_FUNC)(VQAHandle *vqa, long action, void *buffer, long nbytes);
+typedef std::intptr_t (__cdecl *VQA_POINTER_H_FUNC)(VQAHandle *vqa, long action, void *buffer, long nbytes);
 
 // draw callback must be this type
 typedef long (__cdecl *VQA_DC_FUNC)(VQAHandle *vqa, long framenum);
@@ -214,8 +216,8 @@ typedef unsigned long (__cdecl *VQA_UC_FUNC)(VQAHandle *vqa);
  */
 typedef struct _VQAConfig {
 	VQA_H_FUNC			StreamHandler;
-	VQA_H_FUNC 			MemoryHandler;
-	VQA_H_FUNC 			EventHandler;
+	VQA_POINTER_H_FUNC	MemoryHandler;
+	VQA_POINTER_H_FUNC	EventHandler;
 	VQA_DC_FUNC			DrawerCallback;
 	VQA_TC_FUNC			TimerCallback;
 	VQA_UC_FUNC 		UnusedCallback;

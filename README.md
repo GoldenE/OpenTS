@@ -105,7 +105,7 @@ reasoning.
 
 ## Building
 
-OpenTS builds as a 32-bit Windows target with Visual Studio 2022 and CMake.
+OpenTS builds Win32 and native x64 Windows targets with Visual Studio 2022 and CMake.
 [Building OpenTS](docs/BUILDING.md) documents the exact requirements,
 commands, and outputs.
 

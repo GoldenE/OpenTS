@@ -56,6 +56,8 @@
 
 #include "always.h"
 
+#include "architecture.hh"
+
 #include "init.h"
 
 #include "_bench.h"
@@ -243,8 +245,8 @@ static void Init_Threads(void);
 void Draw_Version_Text(Surface * surface);
 void Version_Dialog(void);
 
-BOOL CALLBACK Rules_Choice_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
-BOOL CALLBACK Main_Menu_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
+INT_PTR CALLBACK Rules_Choice_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
+INT_PTR CALLBACK Main_Menu_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
 
 void Init_Random(void);
 
@@ -548,7 +550,7 @@ int Init_Game(int , char * [])
 /// with the index of the one that the player settled upon.
 /// </summary>
 /// <remarks>The dialog must be created with the vector of rules files as its parameter.</remarks>
-static BOOL CALLBACK Rules_Choice_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+static INT_PTR CALLBACK Rules_Choice_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
 	char buffer[128];
 
@@ -694,7 +696,7 @@ static bool Campaign_Available(CampaignClass * campaign)
 /// This routine lists the campaigns that the player is entitled to play, drives the
 /// difficulty slider, and leaves the choice where Choose_Campaign will collect it.
 /// </summary>
-static BOOL CALLBACK Campaign_Choice_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+static INT_PTR CALLBACK Campaign_Choice_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
 	HWND item;
 	struct ChooseCampaignStruct * state;
@@ -742,7 +744,7 @@ static BOOL CALLBACK Campaign_Choice_Dialog_Proc(HWND window, UINT message, WPAR
 			switch (LOWORD(wparam)) {
 				case IDOK:
 					if (HIWORD(wparam) == BN_CLICKED) {
-						state = (ChooseCampaignStruct *)GetWindowLong(window, DWL_USER);
+						state = (ChooseCampaignStruct *)GetWindowLongPtr(window, DWLP_USER);
 
 						if (state != NULL) {
 							item = GetDlgItem(window, IDC_LIST);
@@ -764,7 +766,7 @@ static BOOL CALLBACK Campaign_Choice_Dialog_Proc(HWND window, UINT message, WPAR
 
 				case IDCANCEL:
 					if (HIWORD(wparam) == BN_CLICKED) {
-						state = (ChooseCampaignStruct *)GetWindowLong(window, DWL_USER);
+						state = (ChooseCampaignStruct *)GetWindowLongPtr(window, DWLP_USER);
 
 						if (state != NULL) {
 							state->ChosenCampaign = CAMPAIGN_NONE;
@@ -821,7 +823,7 @@ static CampaignType Choose_Campaign(void)
 	dialog = OwnerDraw::Begin_Dialog(IDD_CAMPAIGN, (DLGPROC) Campaign_Choice_Dialog_Proc);
 
 	if (dialog != NULL) {
-		SetWindowLong(dialog, DWL_USER, (LONG) &state);
+		SetWindowLongPtr(dialog, DWLP_USER, (LONG_PTR) &state);
 
 		OwnerDraw::Move_Dialog(dialog, -1, (HiddenSurface->Get_Height() - 400) / 2 + 147);
 		OwnerDraw::Display_Dialog(dialog);
@@ -2998,7 +3000,7 @@ static void Init_Keys(void)
  * layout differs is refused rather than misread. Recordings are debugging artifacts
  * and carry no compatibility promise beyond one development snapshot.
  */
-static char const RecordingTag[8] = "OTSREC1";
+static constexpr int RecordingTagSize = 8;
 
 
 /***************************************************************************
@@ -3029,7 +3031,7 @@ bool Save_Recording_Values(CCFileClass & file)
 	static_assert(sizeof(OptionsClass) == 112 && offsetof(OptionsClass, SmoothMotion) == 54 && offsetof(OptionsClass, Renderer) == 56,
 		"SmoothMotion must occupy existing padding in the recorded OptionsClass layout");
 	DebugString("Saving recording values for scenario : %s\n", Scen->ScenarioName);
-	file.Write(RecordingTag, sizeof(RecordingTag));
+	file.Write(OPENTS_RECORDING_TAG, RecordingTagSize);
 	file.Write(&Session.Type, sizeof(Session.Type));
 	file.Write(&BuildLevel, sizeof(BuildLevel));
 #if defined(_DEBUG)
@@ -3076,8 +3078,8 @@ bool Save_Recording_Values(CCFileClass & file)
  *=========================================================================*/
 bool Load_Recording_Values(CCFileClass & file)
 {
-	char tag[sizeof(RecordingTag)];
-	if (file.Read(tag, sizeof(tag)) != sizeof(tag) || memcmp(tag, RecordingTag, sizeof(tag)) != 0) {
+	char tag[RecordingTagSize];
+	if (file.Read(tag, sizeof(tag)) != sizeof(tag) || memcmp(tag, OPENTS_RECORDING_TAG, sizeof(tag)) != 0) {
 		DebugString("Recording file %s was not written by this build; not playing it back.\n", file.File_Name());
 		return(false);
 	}
@@ -3215,19 +3217,19 @@ bool Cheat_Key_Process(char chr)
 /// stamp, and a description of the processor it finds itself running upon. It is the
 /// first thing to ask for when a player reports a problem.
 /// </summary>
-BOOL CALLBACK Version_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+INT_PTR CALLBACK Version_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
 	HWND handle;
 	int *res;
 	char buffer[256];
 
-	int rc = OwnerDraw::Default_Dialog_Proc(window, message, wparam, lparam);
+	INT_PTR rc = OwnerDraw::Default_Dialog_Proc(window, message, wparam, lparam);
 
 	if (rc) {
 		return(rc);
 	}
 
-	res = (int *)GetWindowLong(window, DWL_USER);
+	res = (int *)GetWindowLongPtr(window, DWLP_USER);
 
 	switch (message) {
 		case WM_INITDIALOG:
@@ -3298,7 +3300,7 @@ void Version_Dialog(void)
 	dialog = OwnerDraw::Begin_Dialog(IDD_VERSION, (DLGPROC)Version_Dialog_Proc);
 
 	if (dialog != NULL) {
-		SetWindowLong(dialog, DWL_USER, (LONG)&res);
+		SetWindowLongPtr(dialog, DWLP_USER, (LONG_PTR)&res);
 		OwnerDraw::Display_Dialog(dialog);
 
 		while (res == 0) {
@@ -3338,7 +3340,7 @@ int Main_Menu(unsigned int timeout)
 	assert(dialog != NULL);
 
 	if (dialog != NULL) {
-		SetWindowLong(dialog, DWL_USER, (LONG)&retval);
+		SetWindowLongPtr(dialog, DWLP_USER, (LONG_PTR)&retval);
 		char *menu = Get_New_Menu()->Background;
 		Load_Title_Screen(menu, HiddenSurface, &CCPalette);
 		Draw_Version_Text(HiddenSurface);
@@ -3406,16 +3408,16 @@ int Main_Menu(unsigned int timeout)
 /// This routine records the button the player pressed into the result that Main_Menu is
 /// waiting upon, and greys out the load button when there is nothing to load.
 /// </summary>
-BOOL CALLBACK Main_Menu_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+INT_PTR CALLBACK Main_Menu_Dialog_Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
 	int * res;
 
-	int rc = OwnerDraw::Default_Dialog_Proc(window, message, wparam, lparam);
+	INT_PTR rc = OwnerDraw::Default_Dialog_Proc(window, message, wparam, lparam);
 	if (rc) {
 		return(rc);
 	}
 
-	res = (int *) GetWindowLong(window, DWL_USER);
+	res = (int *) GetWindowLongPtr(window, DWLP_USER);
 
 	switch (message) {
 		case WM_INITDIALOG: {
