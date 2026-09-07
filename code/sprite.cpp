@@ -24,6 +24,7 @@
 **********************************************************************/
 
 #include "always.h"
+#include "rendercontext.hh"
 
 #include "face.h"
 #include "surface.h"
@@ -113,6 +114,11 @@ int _CosineTab[256] = {
 
 void Scale_Rotate(Surface &surf, BitmapClass &bmp,Point2D const &pt,int scale,unsigned char angle)
 {
+	if (surf.Get_Raster_Scale() != 1) {
+		RasterSurfaceView raster(surf);
+		Scale_Rotate(raster, bmp, Render_Draw_Point(surf, pt), scale * surf.Get_Raster_Scale(), angle);
+		return;
+	}
 	void *buf = surf.Lock();
 
 	/*un*/signed int scrpos;

@@ -36,6 +36,7 @@
 #include "always.h"
 
 #include "data.h"
+#include "ccfile.h"
 
 #include <new.h>
 
@@ -66,7 +67,9 @@ void * Load_Alloc_Data(FileClass & file)
 
 		ptr = new char[size];
 		if (ptr != NULL) {
-			file.Read(ptr, size);
+			if (file.Read(ptr, size) == size) {
+				if (auto source = dynamic_cast<CCFileClass *>(&file)) source->Register_HD_Data(ptr, size);
+			}
 		}
 	}
 	return(ptr);

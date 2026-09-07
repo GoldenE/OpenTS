@@ -100,6 +100,7 @@ class VoxelLibrary
 
 		void Clear(void);
 		int Read_File(FileClass & file, int load_file_palette = false);
+		VoxelLibrary * Render_Variant();
 
 		LayerStruct const & Get_Layer(int layer);
 		LayerInfoStruct const & Get_Layer_Info(int layer, int info);

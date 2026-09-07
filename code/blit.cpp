@@ -37,6 +37,9 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "always.h"
+#include "rendercontext.hh"
+#include "rastercache.hh"
+#include <vector>
 
 #include "blit.h"
 
@@ -70,7 +73,7 @@
  *=============================================================================================*/
 int Buffer_Size(Surface const & surface, int width, int height)
 {
-	return(width * height * surface.Bytes_Per_Pixel());
+	return Checked_Raster_Size(width, height, surface.Bytes_Per_Pixel(), surface.Get_Raster_Scale());
 }
 
 
@@ -98,7 +101,7 @@ bool To_Buffer(Surface const & surface, Rect const & rect, Buffer & buffer)
 {
 	if (!rect.Is_Valid()) return(false);
 
-	BSurface from(rect.Width, rect.Height, surface.Bytes_Per_Pixel(), buffer);
+	BSurface from(rect.Width, rect.Height, surface.Bytes_Per_Pixel(), buffer, surface.Get_Raster_Scale());
 	return(from.Blit_From(Rect(0, 0, rect.Width, rect.Height), surface, rect));
 }
 
@@ -126,7 +129,7 @@ bool From_Buffer(Surface & surface, Rect const & rect, Buffer const & buffer)
 {
 	if (!rect.Is_Valid()) return(false);
 
-	BSurface from(rect.Width, rect.Height, surface.Bytes_Per_Pixel(), buffer);
+	BSurface from(rect.Width, rect.Height, surface.Bytes_Per_Pixel(), buffer, surface.Get_Raster_Scale());
 	return(surface.Blit_From(rect, from, Rect(0, 0, rect.Width, rect.Height)));
 }
 
@@ -198,8 +201,109 @@ bool Bit_Blit(Surface & dest, Rect const & destrect, Surface const & source, Rec
  * HISTORY:                                                                                    *
  *   05/27/1997 JLB : Created.                                                                 *
  *=============================================================================================*/
+static bool Raster_Blit(Surface & dest, Rect const & dclip, Rect const & ddrect, Surface const & source, Rect const & sclip, Rect const & ssrect, Blitter const * plain, RLEBlitter const * rle, int depth, ZGradientType zgrad, int alpha, Surface * zshape = nullptr, Point2D zpoint = Point2D())
+{
+	if (zgrad == ZGRAD_NONE) zgrad = ZGRAD_135DEG;
+	if (zgrad < ZGRAD_FIRST || zgrad >= ZGRAD_COUNT) return false;
+	int scale = dest.Get_Raster_Scale();
+	Rect target = Render_Rect_To_Raster(dest, ddrect.Bias_To(dclip));
+	Point2D residual = Render_Origin_Residual(scale);
+	target.X += residual.X; target.Y += residual.Y;
+	Rect clipped = Intersect(target, Render_Rect_To_Raster(dest, Intersect(dclip, dest.Get_Rect())));
+	if (!clipped.Is_Valid() || !ssrect.Is_Valid()) return false;
+	RasterSurfaceView output(dest);
+	auto out = output.View();
+	auto pixels = static_cast<std::uint8_t const *>(source.Lock());
+	if (!out.Pixels || !pixels) { if (pixels) source.Unlock(); return false; }
+	std::shared_ptr<CachedRasterFrame const> cached;
+	if (sclip.X == 0 && sclip.Y == 0 && ssrect.X == 0 && ssrect.Y == 0 && ssrect.Width == source.Get_Width() && ssrect.Height == source.Get_Height() && ddrect.Width == ssrect.Width && ddrect.Height == ssrect.Height) {
+		cached = Fetch_Raster_Asset(pixels, source.Get_Width(), source.Get_Height(), source.Get_Raster_Scale(), scale, source.Bytes_Per_Pixel(), rle != nullptr);
+	}
+	RasterWorkLease work_lease;
+	auto & work = work_lease.Buffers();
+	auto & rows = work.Rows;
+	rows.clear();
+	if (rle && !cached) {
+		auto row = pixels;
+		for (int y = 0; y < source.Get_Raster_Height(); ++y) {
+			rows.push_back(row + 2);
+			row += *reinterpret_cast<std::uint16_t const *>(row);
+		}
+	}
+	auto & decoded = work.Decoded;
+	if (!cached) decoded.resize(source.Get_Raster_Width() * source.Bytes_Per_Pixel());
+	auto & scan = work.Scan;
+	auto & zscan = work.Depth;
+	zscan.assign(clipped.Width, 0);
+	auto zp = zshape ? static_cast<std::uint8_t const *>(zshape->Lock()) : nullptr;
+	ZGradStruct const & gradient = ZGradients[zgrad];
+	int first_logical_y = (clipped.Y - target.Y) / scale;
+	int initial_z = 0, initial_fraction = 0;
+	if (DepthBuffer) {
+		if (gradient.IsTopDown) {
+			initial_z = static_cast<unsigned short>(DepthBuffer->Get_Scroll_Delta(dclip.Y + ddrect.Y + first_logical_y - DepthBuffer->Bounds.Y)) + depth;
+			initial_z = initial_z / gradient.LineIncrement * gradient.LineIncrement;
+		} else {
+			initial_z = static_cast<unsigned short>(DepthBuffer->Get_Scroll_Delta(dclip.Y + ddrect.Y + ddrect.Height - 1 - DepthBuffer->Bounds.Y)) + depth;
+			if (!zshape) {
+				int ratio = gradient.StepNumerator / gradient.StepDenominator;
+				int remaining = ddrect.Height - first_logical_y;
+				initial_z = initial_z / ratio * ratio - remaining / ratio;
+				initial_fraction = gradient.StepNumerator - remaining % ratio;
+				if (initial_fraction == gradient.StepNumerator) { initial_fraction = 0; initial_z += gradient.WrapIncrement; }
+			}
+		}
+	}
+	int previous_sy = -1;
+	for (int y = clipped.Y; y < clipped.Y + clipped.Height; ++y) {
+		int local_y = (y - target.Y) / scale;
+		int sy = (ssrect.Y + sclip.Y) * source.Get_Raster_Scale() + (y - target.Y) * ssrect.Height * source.Get_Raster_Scale() / target.Height;
+		if (sy < 0 || sy >= source.Get_Raster_Height()) continue;
+		if (!cached && sy != previous_sy) {
+			if (rle) {
+				std::fill(decoded.begin(), decoded.end(), 0);
+				auto p = rows[sy]; int x = 0;
+				while (x < source.Get_Raster_Width()) { int value = *p++; if (value) decoded[x++] = static_cast<std::uint8_t>(value); else { int count = *p++; if (!count) break; x += count; } }
+			} else memcpy(decoded.data(), pixels + sy * source.Stride(), decoded.size());
+			scan.clear();
+			for (int x = clipped.X; x < clipped.X + clipped.Width; ++x) {
+				int sx = (ssrect.X + sclip.X) * source.Get_Raster_Scale() + (x - target.X) * ssrect.Width * source.Get_Raster_Scale() / target.Width;
+				if (sx < 0 || sx >= source.Get_Raster_Width()) { scan.insert(scan.end(), source.Bytes_Per_Pixel(), 0); continue; }
+				if (rle) { scan.push_back(decoded[sx]); if (!decoded[sx]) scan.push_back(1); }
+				else scan.insert(scan.end(), decoded.begin() + sx * source.Bytes_Per_Pixel(), decoded.begin() + (sx + 1) * source.Bytes_Per_Pixel());
+			}
+			previous_sy = sy;
+		}
+		void * zbuffer = nullptr; void * abuffer = nullptr; int current_z = 0;
+		if (DepthBuffer) {
+			zbuffer = reinterpret_cast<void *>(DepthBuffer->Get_Raster_Offset(Point2D(clipped.X, y - DepthBuffer->Bounds.Y * scale)));
+			current_z = initial_z;
+			if (!zshape) current_z += (initial_fraction + (local_y - first_logical_y) * gradient.StepDenominator) / gradient.StepNumerator * gradient.WrapIncrement;
+		}
+		if (AlphaBuffer) abuffer = reinterpret_cast<void *>(AlphaBuffer->Get_Raster_Offset(Point2D(clipped.X, y - AlphaBuffer->Bounds.Y * scale)));
+		if (zp) {
+			for (int x = 0; x < clipped.Width; ++x) {
+				int zx = zpoint.X + (clipped.X + x - target.X) / scale; int zy = zpoint.Y + local_y;
+				zscan[x] = zx >= 0 && zy >= 0 && zx < zshape->Get_Width() && zy < zshape->Get_Height() ? zp[zy * zshape->Stride() + zx] : 0;
+			}
+		}
+		auto dst = out.Pixels + y * out.Pitch + clipped.X * out.BytesPerPixel;
+		if (cached) {
+			int left = (ssrect.X + sclip.X) * scale + clipped.X - target.X;
+			if (left < 0 || left + clipped.Width > cached->Width) continue;
+			if (rle) rle->Blit(dst, cached->Encoded.data() + cached->RowOffsets[sy], clipped.Width, left, current_z, zbuffer, abuffer, alpha, 0, zscan.data());
+			else plain->BlitForward(dst, cached->Pixels.data() + (std::size_t(sy) * cached->Width + left) * cached->BytesPerPixel, clipped.Width, current_z, zbuffer, abuffer, alpha);
+		} else if (rle) rle->Blit(dst, scan.data(), clipped.Width, 0, current_z, zbuffer, abuffer, alpha, 0, zscan.data());
+		else plain->BlitForward(dst, scan.data(), clipped.Width, current_z, zbuffer, abuffer, alpha);
+	}
+	if (zp) zshape->Unlock();
+	source.Unlock();
+	return true;
+}
+
 bool Bit_Blit(Surface & dest, Rect const & dcliprect, Rect const & ddrect, Surface const & source, Rect const & scliprect, Rect const & ssrect, Blitter const & blitter, int zdepth, ZGradientType zgrad, int alpha, int)
 {
+	if (dest.Get_Raster_Scale() != 1 || source.Get_Raster_Scale() != 1) return Raster_Blit(dest, dcliprect, ddrect, source, scliprect, ssrect, &blitter, nullptr, zdepth, zgrad, alpha);
 	Rect srect = ssrect;
 	Rect drect = ddrect;
 	bool overlapped = false;
@@ -461,6 +565,7 @@ bool RLE_Blit(Surface & dest, Rect const & destrect, Surface const & source, Rec
  *=============================================================================================*/
 bool RLE_Blit(Surface & dest, Rect const & dcliprect, Rect const & ddrect, Surface const & source, Rect const & scliprect, Rect const & ssrect, RLEBlitter const & blitter, int zdepth, ZGradientType zgrad, int alpha, int, Surface * zshape, Point2D zpoint)
 {
+	if (dest.Get_Raster_Scale() != 1 || source.Get_Raster_Scale() != 1) return Raster_Blit(dest, dcliprect, ddrect, source, scliprect, ssrect, nullptr, &blitter, zdepth, zgrad, alpha, zshape, zpoint);
 	static char _temp_buf[256];
 
 	uintptr_t zbuffer_offset = 0;

@@ -41,6 +41,8 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "always.h"
+#include "hdruntime.hh"
+#include "rendercontext.hh"
 
 #include "wwfont.h"
 
@@ -84,6 +86,22 @@ WWFontClass::WWFontClass(void const * fontdata, bool isoutlined, int shadow) :
 {
 	Set_XSpacing(0);
 	Set_YSpacing(0);
+	HDAsset::Alias(fontdata, this);
+}
+
+
+WWFontClass::~WWFontClass()
+{
+	HDAsset::Forget(this);
+}
+
+
+void * WWFontClass::Set_Font_Data(void const * fontdata)
+{
+	void * previous = const_cast<FontType *>(FontData);
+	HDAsset::Alias(fontdata, this);
+	FontData = static_cast<FontType const *>(fontdata);
+	return previous;
 }
 
 
@@ -393,6 +411,7 @@ int WWFontClass::Set_YSpacing(int y)
  *=============================================================================================*/
 Point2D WWFontClass::Print(char const * string, Surface & surface, Rect const & cliprect, Point2D const & drawpoint, ConvertClass const & convertref, unsigned char const * remap) const
 {
+	ScopedScreenSpace screen_space;
 	if (string == NULL) return(drawpoint);
 
 	/*
@@ -536,7 +555,9 @@ Point2D WWFontClass::Print(char const * string, Surface & surface, Rect const & 
 								*/
 								if (dx >= cliprect.X && dx < cliprect.X+cliprect.Width) {
 									if (c1 != 0) {
-										if (bbp == 2) {
+										if (surface.Get_Raster_Scale() != 1) {
+											surface.Put_Pixel(Point2D(dx, ypos + firstrow + h), convertref.Convert_Pixel(c1));
+										} else if (bbp == 2) {
 											*(short *)drawbuff = (short)convertref.Convert_Pixel(c1);
 										} else {
 											*(char *)drawbuff = (char)convertref.Convert_Pixel(c1);
@@ -554,7 +575,9 @@ Point2D WWFontClass::Print(char const * string, Surface & surface, Rect const & 
 								*/
 								if (dx >= cliprect.X && dx < cliprect.X+cliprect.Width) {
 									if (c2 != 0) {
-										if (bbp == 2) {
+										if (surface.Get_Raster_Scale() != 1) {
+											surface.Put_Pixel(Point2D(dx, ypos + firstrow + h), convertref.Convert_Pixel(c2));
+										} else if (bbp == 2) {
 											*(short *)drawbuff = (short)convertref.Convert_Pixel(c2);
 										} else {
 											*(char *)drawbuff = (char)convertref.Convert_Pixel(c2);
@@ -615,7 +638,9 @@ Point2D WWFontClass::Print(char const * string, Surface & surface, Rect const & 
 								*/
 								if (dx >= cliprect.X && dx < cliprect.X+cliprect.Width) {
 									if (c1 != 0) {
-										if (bbp == 2) {
+										if (surface.Get_Raster_Scale() != 1) {
+											surface.Put_Pixel(Point2D(dx, ypos + firstrow + h), convertref.Convert_Pixel(c1));
+										} else if (bbp == 2) {
 											*(short *)drawbuff = (short)convertref.Convert_Pixel(c1);
 										} else {
 											*(char *)drawbuff = (char)convertref.Convert_Pixel(c1);

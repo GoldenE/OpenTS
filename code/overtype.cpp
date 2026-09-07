@@ -48,6 +48,7 @@
 
 #define INCLUDE_COM
 #include "always.h"
+#include "hdruntime.hh"
 
 #include "overtype.h"
 
@@ -301,6 +302,7 @@ void OverlayTypeClass::Init(TheaterType theater)
 		} else {
 			if (overlay.IsTheater || overlay.IsNewTheater) {
 				if (overlay.ImageData != NULL) {
+					HDAsset::Forget(overlay.ImageData);
 					delete [] (char*) overlay.ImageData;
 					overlay.ImageData = NULL;
 				}

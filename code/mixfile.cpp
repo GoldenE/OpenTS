@@ -44,6 +44,7 @@
 #include "always.h"
 
 #include "mixfile.h"
+#include "hdruntime.hh"
 
 #include "bsearch.h"
 #include "buff.h"
@@ -180,6 +181,7 @@ MixFileClass::MixFileClass(char const * filename, PKey const * key) :
 	**	that this condition would be true.
 	*/
 	DataStart = file.Seek(0, SEEK_CUR) + file.BiasStart;
+	HDPhysicalPath = file.HD_Physical_Path();
 //	DataStart = file.Seek(0, SEEK_CUR);
 
 	/*
@@ -234,6 +236,7 @@ bool MixFileClass::Free(char const * filename)
  *=============================================================================================*/
 MixFileClass::~MixFileClass(void)
 {
+	HDAsset::Invalidate_Archive(this);
 	/*
 	**	Deallocate any allocated memory.
 	*/
@@ -279,9 +282,36 @@ MixFileClass::~MixFileClass(void)
 void const * MixFileClass::Retrieve(char const * filename)
 {
 	void * ptr = NULL;
-	Offset(filename, &ptr);
+	MixFileClass * archive = nullptr;
+	int length = 0;
+	Offset(filename, &ptr, &archive, nullptr, &length);
+	if (ptr != nullptr) HDAsset::Register_Archive(filename, ptr, length, archive);
 	return(ptr);
 };
+
+
+bool MixFileClass::Read_HD_Member(char const * filename, void * destination, int capacity, int & length) const
+{
+	std::string name = filename;
+	if (!HDAsset::Normalize_Name(name)) return false;
+	SubBlock key;
+	key.CRC = CRCEngine()(name.data(), static_cast<int>(name.size()));
+	auto block = Binary_Search<SubBlock>(HeaderBuffer, Count, key);
+	if (!block || block->Size < 0 || block->Offset < 0 || block->Offset > DataSize || block->Size > DataSize - block->Offset) return false;
+	length = block->Size;
+	if (destination == nullptr) return true;
+	if (length > capacity) return false;
+	if (Data != nullptr) {
+		memcpy(destination, static_cast<char const *>(Data) + block->Offset, length);
+		return true;
+	}
+	if (HDPhysicalPath.empty()) return false;
+	RawFileClass file(HDPhysicalPath.c_str());
+	if (!file.Open(FileClass::READ)) return false;
+	if (DataStart < 0 || block->Offset > INT_MAX - DataStart) return false;
+	if (file.Seek(DataStart + block->Offset, SEEK_SET) != DataStart + block->Offset) return false;
+	return file.Read(destination, length) == length;
+}
 
 
 /***********************************************************************************************
@@ -482,6 +512,7 @@ bool MixFileClass::Cache(Buffer const * buffer)
  *=============================================================================================*/
 void MixFileClass::Free(void)
 {
+	HDAsset::Invalidate_Archive(this);
 	if (Data != NULL && IsAllocated) {
 		delete [] Data;
 	}

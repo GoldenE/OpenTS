@@ -22,7 +22,7 @@ class ZBuffer
 		friend class IsometricTileTypeClass;
 	public:
 		//ZBuffer(void);
-		ZBuffer(Rect rect);
+		ZBuffer(Rect rect, int density = 1);
 		~ZBuffer(void) { Release_Surface(); }
 
 		unsigned short Get_Scroll(void) const { return(ScrollOffset); }
@@ -41,6 +41,8 @@ class ZBuffer
 		void Update(Rect rect);
 
 		std::uintptr_t Get_Buffer_Offset(Point2D position);
+		std::uintptr_t Get_Raster_Offset(Point2D position);
+		int Get_Raster_Scale() const { return RasterScale; }
 
 		std::uintptr_t Wrap_Overflow(std::uintptr_t position) const;
 		std::uintptr_t Wrap_Underflow(std::uintptr_t position) const;
@@ -53,6 +55,7 @@ class ZBuffer
 
 	private:
 		void Release_Surface(void);
+		bool Fill_Raster(unsigned short value, Rect rect);
 
 	public:
 		/*
@@ -99,6 +102,7 @@ class ZBuffer
 		 */
 		int BufferWidth;
 		int BufferHeight;
+		int RasterScale;
 };
 
 inline std::uintptr_t ZBuffer::Wrap_Overflow(std::uintptr_t position) const

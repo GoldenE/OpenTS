@@ -8,6 +8,7 @@
  ******************************************************************************/
 
 #include "always.h"
+#include "renderworld.hh"
 
 #include "loco.h"
 
@@ -83,11 +84,10 @@ Matrix3D STDMETHODCALLTYPE LocomotionClass::Draw_Matrix(int *key)
 {
 	Matrix3D draw_matrix(true);
 
-	draw_matrix.Rotate_Z(LinkedTo->PrimaryFacing.Current().As_Radian32());
+	draw_matrix.Rotate_Z(key ? Render_Voxel_Radians(LinkedTo->PrimaryFacing.Current()) : LinkedTo->PrimaryFacing.Current().As_Radian32());
 
 	if (key && *key != -1) {
-		*key *= 32;
-		*key |= LinkedTo->PrimaryFacing.Current().As_Dir32();
+		*key = Render_Voxel_Key(*key, Render_Voxel_Facing(LinkedTo->PrimaryFacing.Current()), Render_Voxel_Facing_Count());
 	}
 	return(draw_matrix);
 }
@@ -106,11 +106,10 @@ Matrix3D STDMETHODCALLTYPE LocomotionClass::Shadow_Matrix(int *key)
 	int ramp = Map[LinkedTo->Get_Coord()].Ramp;
 
 	Matrix3D draw_matrix(Get_Slope_Matrix(ramp));
-	draw_matrix.Rotate_Z(LinkedTo->PrimaryFacing.Current().As_Radian32());
+	draw_matrix.Rotate_Z(Render_Voxel_Radians(LinkedTo->PrimaryFacing.Current()));
 
 	if (key && *key != -1) {
-		*key = 32 * (ramp + (*key << 6));
-		*key |= LinkedTo->PrimaryFacing.Current().As_Dir32();
+		*key = Render_Voxel_Key(Render_Voxel_Key(*key, ramp, 64), Render_Voxel_Facing(LinkedTo->PrimaryFacing.Current()), Render_Voxel_Facing_Count());
 	}
 	return(draw_matrix);
 }

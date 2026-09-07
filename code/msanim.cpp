@@ -8,6 +8,7 @@
  ******************************************************************************/
 
 #include "always.h"
+#include "hdruntime.hh"
 
 #include "msanim.h"
 
@@ -75,6 +76,8 @@ ConvertClass * Create_Drawer(char const * palette_name)
 		((unsigned char *)*palette)[gindex*3+2]<<2);
 	}
 
+	HDAsset::Alias(palette, &CCPalette);
+	HDAsset::Forget(palette);
 	delete palette;
 
 	return(new ConvertClass(CCPalette, CCPalette, *VisibleSurface));

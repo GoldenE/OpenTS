@@ -116,6 +116,12 @@ Each process emits at most 24 DirectSound operation records and eight PCM summar
 
 A nonzero decoded buffer establishes decoder output, and a successful DirectSound call establishes API acceptance. Neither alone establishes audible output. Correlate the movie timeline with a meter attributed to the game process or a listening check, and keep an unavailable audio-output observation explicit.
 
+## HD rendering measurements
+
+Set `OPENTS_HD_PROFILE=1` only in the launching process to add one `HDCache` line to each existing one-second measurement report in Debug or Release. It records retained classic-raster cache bytes and entries, cumulative hits and builds, and retained UI surface-scratch bytes. Differences between consecutive counters distinguish warm reuse from ongoing cache churn. These counters do not include decoded HD packs, framebuffers, voxel caches, active temporary buffers, allocator overhead, or total process memory.
+
+Record the executable identity, render mode and density, logical resolution, actual backend named in the startup log, window/client dimensions, and the tested scene with each measurement. Measure process CPU and memory separately, and wait for unrelated builds and stress checks to finish before comparing costs. Synthetic composition checks do not establish live backend timing.
+
 ## Play-through checklist
 
 The checklist covers what a CRC dump cannot observe. Each item states the

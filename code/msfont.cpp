@@ -8,6 +8,7 @@
  ******************************************************************************/
 
 #include "always.h"
+#include "hdruntime.hh"
 
 #include "msfont.h"
 
@@ -177,6 +178,8 @@ bool MSFont::Init(char const * file_name, char const * palette_name)
 
 	Color = DSurface::Build_Hicolor_Pixel((*palette)[68].Get_Red()<<2, (*palette)[68].Get_Green()<<2, (*palette)[68].Get_Blue()<<2);
 
+	HDAsset::Alias(palette, &CCPalette);
+	HDAsset::Forget(palette);
 	delete palette;
 
 	Drawer = new ConvertClass(CCPalette, CCPalette, *VisibleSurface);

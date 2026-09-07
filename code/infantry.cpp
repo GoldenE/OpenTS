@@ -105,6 +105,8 @@
 #include "fly.h"
 #include "fog.h"
 #include "goptions.h"
+#include "interp.h"
+#include "rendercontext.hh"
 #include "house.h"
 #include "houstype.h"
 #include "ilocos.h"
@@ -623,6 +625,8 @@ int InfantryClass::Shape_Number(void) const
  *=============================================================================================*/
 void InfantryClass::Draw_It(Point2D const & xpoint, Rect const & cliprect) const
 {
+	DirType facing = Is_JumpJet() && TarCom != NULL ? Direction(TarCom) : PrimaryFacing.Current();
+	ScopedRenderAnimation animation(Fetch_Render_Progress(Options.SmoothMotion ? Fetch_Render_Alpha() : 0), facing.As_Dir256());
 	static int _zadj = -10;
 
 	Point2D point = xpoint;
@@ -634,6 +638,7 @@ void InfantryClass::Draw_It(Point2D const & xpoint, Rect const & cliprect) const
 		persist->GetClassID(&clsid);
 
 		if (HeightAGL > 0 && clsid == CLSID_BallisticLocomotion) {
+			ScopedRenderAnimation pod_animation({});
 			ShapeSet const * shapefile = (ShapeSet const *)MFCD::Retrieve("POD.SHP");
 			Point2D spoint = xpoint + Point2D(Locomotion->Shadow_Point());
 			Draw_Shape(
@@ -686,6 +691,10 @@ void InfantryClass::Draw_It(Point2D const & xpoint, Rect const & cliprect) const
 			}
 
 			if (height > 0) {
+				Coord body = Render_Coord() + Fetch_Render_Offset();
+				Coord ground = body - Coord(0, 0, height);
+				Point2D legacy_ground = TacticalMap->Coord_To_Pixel_Absolute(body) + Point2D(0, TacticalMap->Z_Lepton_To_Pixel(height));
+				ScopedWorldOrigin shadow_origin(ground, legacy_ground);
 				Draw_Shape(
 					*LogicalSurface,
 					*NormalDrawer,

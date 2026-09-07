@@ -15,6 +15,7 @@
 #include "surface.h"
 
 #include <cstring>
+#include <vector>
 
 
 /// <summary>
@@ -44,7 +45,6 @@ StaticBufferClass::~StaticBufferClass(void)
 	}
 }
 
-static char CompressionBuffer[256];
 
 
 /// <summary>
@@ -60,36 +60,7 @@ static char CompressionBuffer[256];
 /// NULL is returned if the buffer has no room left.</returns>
 StaticBufferClass::Entry * StaticBufferClass::Add(Surface & surface, SurfaceRegion const & region)
 {
-	Entry * header = (Entry *)Reserve(sizeof(Entry));
-	if (header == NULL) {
-		return(NULL);
-	}
-
-	header->X = region.Point.X;
-	header->Y = region.Point.Y;
-	header->Width = region.Bounds.Width;
-	header->Height = region.Bounds.Height;
-	header->Data = Cursor;
-
-	unsigned char * data = (unsigned char *)surface.Lock(region.Bounds.TopLeft);
-
-	RLEEngine rle;
-	int line = 0;
-	while (line < region.Bounds.Height) {
-		int comp_size = rle.Line_Compress(data, CompressionBuffer, region.Bounds.Width);
-		unsigned char * buffer = Reserve(comp_size);
-		if (buffer == NULL) {
-			surface.Unlock();
-			return(NULL);
-		}
-
-		memcpy(buffer, CompressionBuffer, comp_size);
-		line++;
-		data += surface.Stride();
-	}
-
-	surface.Unlock();
-	return(header);
+	return Add(surface, region.Bounds, region.Point.X, region.Point.Y);
 }
 
 
@@ -107,8 +78,14 @@ StaticBufferClass::Entry * StaticBufferClass::Add(Surface & surface, SurfaceRegi
 /// NULL is returned if the buffer has no room left.</returns>
 StaticBufferClass::Entry * StaticBufferClass::Add(Surface & surface, Rect const & cliprect, short x, short y)
 {
+	if (surface.Bytes_Per_Pixel() != 1 || cliprect.Width <= 0 || cliprect.Height <= 0 || cliprect.X < 0 || cliprect.Y < 0 ||
+		cliprect.X + cliprect.Width > surface.Get_Width() || cliprect.Y + cliprect.Height > surface.Get_Height()) return nullptr;
+	unsigned char * const previous = Cursor;
+	std::size_t const padding = (alignof(Entry) - reinterpret_cast<std::uintptr_t>(Cursor) % alignof(Entry)) % alignof(Entry);
+	if (!Reserve(static_cast<int>(padding))) return nullptr;
 	Entry * header = (Entry *)Reserve(sizeof(Entry));
 	if (header == NULL) {
+		Cursor = previous;
 		return(NULL);
 	}
 
@@ -116,21 +93,40 @@ StaticBufferClass::Entry * StaticBufferClass::Add(Surface & surface, Rect const 
 	header->Y = y;
 	header->Width = cliprect.Width;
 	header->Height = cliprect.Height;
+	header->Density = surface.Get_Raster_Scale();
 	header->Data = Cursor;
 
-	unsigned char * data = (unsigned char *)surface.Lock(cliprect.TopLeft);
+	int const density = header->Density;
+	int const width = cliprect.Width * density;
+	int const height = cliprect.Height * density;
+	std::vector<unsigned char> compression(static_cast<std::size_t>(width) * 2 + 16);
+	unsigned char * data = (unsigned char *)surface.Lock(Point2D(cliprect.X * density, cliprect.Y * density));
+	if (!data) { Cursor = previous; return nullptr; }
 
-	RLEEngine rle;
 	int line = 0;
-	while (line < cliprect.Height) {
-		int comp_size = rle.Line_Compress(data, CompressionBuffer, cliprect.Width);
+	while (line < height) {
+		int comp_size = 2;
+		for (int column = 0; column < width;) {
+			if (data[column]) {
+				compression[comp_size++] = data[column++];
+			} else {
+				int run = 0;
+				while (column + run < width && run < 255 && data[column + run] == 0) ++run;
+				compression[comp_size++] = 0;
+				compression[comp_size++] = static_cast<unsigned char>(run);
+				column += run;
+			}
+		}
+		compression[0] = static_cast<unsigned char>(comp_size);
+		compression[1] = static_cast<unsigned char>(comp_size >> 8);
 		unsigned char * buffer = Reserve(comp_size);
 		if (buffer == NULL) {
 			surface.Unlock();
+			Cursor = previous;
 			return(NULL);
 		}
 
-		memcpy(buffer, CompressionBuffer, comp_size);
+		memcpy(buffer, compression.data(), comp_size);
 		line++;
 		data += surface.Stride();
 	}

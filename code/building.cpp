@@ -126,6 +126,9 @@
 #include "cell.h"
 #include "combat.h"
 #include "conquer.h"
+#include "rendercontext.hh"
+#include "renderworld.hh"
+#include "interp.h"
 #include "dbgprint.h"
 #include "draw.h"
 #include "drive.h"
@@ -692,6 +695,7 @@ bool BuildingClass::Render(Rect & rect, bool forced, bool extras_only) const
 		if (rect.Is_Overlapping(((BuildingClass *)this)->Get_Render_Rect() + TacticalRect.TopLeft)) {
 			Point2D point;
 			TacticalMap->Coord_To_Pixel(Render_Coord(), point);
+			ScopedWorldOrigin origin(Render_Coord(), TacticalMap->Coord_To_Pixel_Absolute(Render_Coord()));
 			if (rect.X > TacticalRect.X) {
 				point.X += TacticalRect.X - rect.X;
 			}
@@ -804,6 +808,7 @@ void BuildingClass::Editor_Draw_It(Point2D const & xdrawpoint, Rect const & xcli
  *=============================================================================================*/
 void BuildingClass::Draw_It(Point2D const & xdrawpoint, Rect const & xcliprect) const
 {
+	ScopedRenderAnimation animation(Fetch_Render_Progress(Options.SmoothMotion ? Fetch_Render_Alpha() : 0), PrimaryFacing.Current().As_Dir256());
 	Cell cell = PositionCell;
 
 	/*
@@ -819,6 +824,7 @@ void BuildingClass::Draw_It(Point2D const & xdrawpoint, Rect const & xcliprect) 
 	int zadjust = Class->NormalZAdjust;
 
 	if (Mission == MISSION_OPEN && !Door.Is_Ready_To_Open()) {
+		ScopedRenderAnimation gate_animation({});
 
 		int shapenum = int(Door.Percent_Complete() * Class->GateStages);
 		if (Door.Is_Door_Closing()) {
@@ -933,6 +939,8 @@ void BuildingClass::Draw_Extras(Point2D & xy, Rect & rect)
 			if (!MainWindow || Debug_Map || !Scen->Special.IsFogOfWar || (!Map.Is_Fogged(techno->PositionCoord) && !Map.Is_Fogged(coord))) {
 				Point2D point;
 				TacticalMap->Coord_To_Pixel(techno->Render_Coord(), point);
+				ScopedWorldOrigin origin(techno->Render_Coord(), TacticalMap->Coord_To_Pixel_Absolute(techno->Render_Coord()));
+				ScopedRenderAnimation animation(techno->Fetch_Render_Progress(Options.SmoothMotion ? Fetch_Render_Alpha() : 0), techno->PrimaryFacing.Current().As_Dir256());
 				techno->Draw_It(point, rect);
 			}
 		}
@@ -992,7 +1000,7 @@ void BuildingClass::Draw_Extras(Point2D & xy, Rect & rect)
 
 			if (Class->AuxVoxel.VoxLib != NULL) {
 
-				matrix.Rotate_Z(PrimaryFacing.Current().As_Radian32());
+				matrix.Rotate_Z(Render_Voxel_Radians(PrimaryFacing.Current()));
 				matrix.Translate_X(Class->TurretOffset / 8);
 
 				/*
@@ -1014,7 +1022,7 @@ void BuildingClass::Draw_Extras(Point2D & xy, Rect & rect)
 					flh = Vector3(Get_Class_Weapon_Data(0)->FireFLH.X / 8, 0, Get_Class_Weapon_Data(0)->FireFLH.Z / 8);
 				}
 
-				barrel_matrix.Rotate_Y(-(BarrelPitch.Current().As_Radian32()));
+				barrel_matrix.Rotate_Y(-Render_Voxel_Radians(BarrelPitch.Current()));
 				barrel_matrix.Translate(flh);
 				barrel_matrix.Translate(vec2);
 
@@ -1046,7 +1054,7 @@ void BuildingClass::Draw_Extras(Point2D & xy, Rect & rect)
 				Vector3 vec2 = Vector3(matrix.Get_X_Translation(), matrix.Get_Y_Translation(), matrix.Get_Z_Translation());
 				matrix.Translate(-vec2);
 
-				matrix.Rotate_Z(PrimaryFacing.Current().As_Radian32());
+				matrix.Rotate_Z(Render_Voxel_Radians(PrimaryFacing.Current()));
 
 				Vector3 flh;
 				if (Class->TurretNotExportedOnGround) {
@@ -1056,7 +1064,7 @@ void BuildingClass::Draw_Extras(Point2D & xy, Rect & rect)
 					flh = Vector3(Get_Class_Weapon_Data(0)->FireFLH.X / 8, 0, Get_Class_Weapon_Data(0)->FireFLH.Z / 8);
 				}
 
-				matrix.Rotate_Y(-(BarrelPitch.Current().As_Radian32()));
+				matrix.Rotate_Y(-Render_Voxel_Radians(BarrelPitch.Current()));
 				matrix.Translate(flh);
 				matrix.Translate(vec2);
 
@@ -1076,7 +1084,7 @@ void BuildingClass::Draw_Extras(Point2D & xy, Rect & rect)
 			static int _dir_adjust = 28;
 			static bool _make_visible = true;
 
-			Matrix3D matrix = Get_Barrel_Matrix();
+			Matrix3D matrix = Get_Barrel_Matrix(true);
 
 			int dir = (_dir_adjust + PrimaryFacing.Current().As_Dir32()) % (FACING_COUNT * 4);
 			bool in_front = (dir <= 16);
@@ -10173,12 +10181,11 @@ void BuildingClass::Make_Fogged(DynamicVectorClass<FoggedObjectClass *> * fogged
 
 /// <summary>
 /// Builds the transformation matrix for this building's voxel barrel.
-/// This routine is used by the voxel draw code to place the barrel. The pivot offsets and
-/// the scale come from the building type, while the rotation and pitch track the turret
-/// as it aims.
+/// Rendering can use finer facing buckets; weapon attachment calculations retain legacy quantization.
 /// </summary>
+/// <param name="render">Use the active render-facing density.</param>
 /// <returns>Returns with the matrix that positions the barrel on the building.</returns>
-Matrix3D BuildingClass::Get_Barrel_Matrix(void) const
+Matrix3D BuildingClass::Get_Barrel_Matrix(bool render) const
 {
 	Matrix3D matrix;
 	matrix.Make_Identity();
@@ -10187,13 +10194,13 @@ Matrix3D BuildingClass::Get_Barrel_Matrix(void) const
 	matrix.Translate_Y(Class->VoxelBarrelOffsetToBuildingPivotPoint.Y);
 	matrix.Translate_Z(Class->VoxelBarrelOffsetToBuildingPivotPoint.Z);
 
-	matrix.Rotate_Z(PrimaryFacing.Current().As_Radian32());
+	matrix.Rotate_Z(render ? Render_Voxel_Radians(PrimaryFacing.Current()) : PrimaryFacing.Current().As_Radian32());
 
 	matrix.Translate_X(Class->VoxelBarrelOffsetToRotatePivotPoint.X);
 	matrix.Translate_Y(Class->VoxelBarrelOffsetToRotatePivotPoint.Y);
 	matrix.Translate_Z(Class->VoxelBarrelOffsetToRotatePivotPoint.Z);
 
-	matrix.Rotate_Y(-(BarrelPitch.Current().As_Radian32()));
+	matrix.Rotate_Y(-(render ? Render_Voxel_Radians(BarrelPitch.Current()) : BarrelPitch.Current().As_Radian32()));
 
 	matrix.Translate_X(Class->VoxelBarrelOffsetToPitchPivotPoint.X);
 	matrix.Translate_Y(Class->VoxelBarrelOffsetToPitchPivotPoint.Y);

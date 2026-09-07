@@ -2011,6 +2011,22 @@ bool CellClass::Draw_Placement_Cursor(Point2D const & xpoint, Rect const & clipr
 /// <param name="drawpoint">The pixel position to draw the shape at.</param>
 /// <param name="cliprect">The clipping rectangle to draw within.</param>
 /// <param name="shapenum">The shroud shape to draw.</param>
+static void Draw_Alpha_Raster(unsigned char const * pixels, int width, int sx, int sy, int left, int top, int right, int bottom, bool blend)
+{
+	int const density = AlphaBuffer->Get_Raster_Scale();
+	for (int y = top; y < bottom; ++y) {
+		for (int x = left; x < right; ++x) {
+			unsigned char const pixel = pixels[(sy + y - top) * width + sx + x - left];
+			if ((blend && pixel > 127) || (!blend && pixel == 254)) continue;
+			for (int ry = 0; ry < density; ++ry) for (int rx = 0; rx < density; ++rx) {
+				auto * alpha = reinterpret_cast<unsigned short *>(AlphaBuffer->Get_Raster_Offset(Point2D(x * density + rx, (y - TacticalRect.Y) * density + ry)));
+				*alpha = blend ? static_cast<unsigned short>(std::max(0, static_cast<int>(*alpha) + pixel - 127)) : pixel;
+			}
+		}
+	}
+}
+
+
 void CellClass::Draw_Shroud_Or_Fog_Shape(Point2D const & drawpoint, Rect const & cliprect, int shapenum)
 {
 	static bool shapes_loaded = false;
@@ -2049,6 +2065,10 @@ void CellClass::Draw_Shroud_Or_Fog_Shape(Point2D const & drawpoint, Rect const &
 	int alpha_skip = inter_left - inter_right + AlphaBuffer->Get_Buffer_Width();
 
 	unsigned char * shapedata = (unsigned char *)shapes->Get_Data(shapenum);
+	if (AlphaBuffer->Get_Raster_Scale() > 1) {
+		Draw_Alpha_Raster(shapedata, shaperect.Width, src_x, src_y, inter_left, inter_top, inter_right, inter_bottom, false);
+		return;
+	}
 	unsigned short * alphaptr = (unsigned short *)AlphaBuffer->Get_Buffer_Offset(Point2D(inter_left, inter_top - TacticalRect.Y));
 
 	unsigned char * shapeptr = (unsigned char *)&shapedata[src_x + src_y * shaperect.Width];
@@ -2121,6 +2141,10 @@ void CellClass::Draw_Fog_Shape(Point2D const & drawpoint, Rect const & cliprect,
 
 	unsigned char * shapedata = (unsigned char *)shapes->Get_Data(shapenum);
 	unsigned short * alphaptr = (unsigned short *)AlphaBuffer->Get_Buffer_Offset(Point2D(inter_left, inter_top - TacticalRect.Y));
+	if (AlphaBuffer->Get_Raster_Scale() > 1) {
+		Draw_Alpha_Raster(shapedata, shaperect.Width, src_x, src_y, inter_left, inter_top, inter_right, inter_bottom, true);
+		return;
+	}
 
 	unsigned char * shapeptr = (unsigned char *)&shapedata[src_x + src_y * shaperect.Width];
 	if (&alphaptr[inter_right - inter_left + (inter_bottom - inter_top) * AlphaBuffer->Get_Buffer_Width() + 2] >= (unsigned short *)AlphaBuffer->Get_Buffer_End()) {

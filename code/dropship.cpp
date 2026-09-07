@@ -8,6 +8,7 @@
  ******************************************************************************/
 
 #include "always.h"
+#include "hdruntime.hh"
 
 #include "dropship.h"
 
@@ -436,7 +437,9 @@ void Dropship_Screen(void)
 	int x = (HiddenSurface->Get_Width() - drop_width) / 2;
 
 	PaletteClass palette_data;
+	HDAsset::ScopedOwner palette_owner(&palette_data);
 	memmove(&palette_data, (unsigned char *)MFCD::Retrieve("DROPSHIP.PAL"), sizeof(palette_data));
+	HDAsset::Alias(MFCD::Retrieve("DROPSHIP.PAL"), &palette_data);
 	for (i = 0; i < 256; ++i) {
 		palette_data[i] = RGBClass(palette_data[i].Get_Red() * 4, palette_data[i].Get_Green() * 4, palette_data[i].Get_Blue() * 4);
 	}
@@ -445,6 +448,7 @@ void Dropship_Screen(void)
 	ConvertClass *drawer_dropship_alpha = new ConvertClass(palette_data, GamePalette, *VisibleSurface, 1, false);
 
 	memmove(&palette_data, (unsigned char *)MFCD::Retrieve("CAMEO.PAL"), sizeof(palette_data));
+	HDAsset::Alias(MFCD::Retrieve("CAMEO.PAL"), &palette_data);
 	for (i = 0; i < 256; ++i) {
 		palette_data[i] = RGBClass(palette_data[i].Get_Red() * 4, palette_data[i].Get_Green() * 4, palette_data[i].Get_Blue() * 4);
 	}
@@ -576,10 +580,12 @@ void Dropship_Screen(void)
 	DynamicVectorClass<TechnoTypeClass *> selections;
 
 	Rect alpha_area = AlphaBuffer->Get_Bounds();
+	int const alpha_density = AlphaBuffer->Get_Raster_Scale();
+	int const depth_density = DepthBuffer ? DepthBuffer->Get_Raster_Scale() : alpha_density;
 	Hide_Mouse();
 	delete AlphaBuffer;
 	AlphaBuffer = NULL;
-	AlphaBuffer = new ABuffer(Rect(0, 0, HiddenSurface->Get_Width(), HiddenSurface->Get_Height()));
+	AlphaBuffer = new ABuffer(Rect(0, 0, HiddenSurface->Get_Width(), HiddenSurface->Get_Height()), HiddenSurface->Get_Raster_Scale());
 	Show_Mouse();
 
 	LogicalSurface = HiddenSurface;
@@ -1041,13 +1047,13 @@ void Dropship_Screen(void)
 
 	delete AlphaBuffer;
 	AlphaBuffer = NULL;
-	AlphaBuffer = new ABuffer(alpha_area);
+	AlphaBuffer = new ABuffer(alpha_area, alpha_density);
 
 	if (DepthBuffer) {
 		delete DepthBuffer;
 		DepthBuffer = NULL;
 	}
-	DepthBuffer = new ZBuffer(alpha_area);
+	DepthBuffer = new ZBuffer(alpha_area, depth_density);
 
 	Show_Mouse();
 }

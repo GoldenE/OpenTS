@@ -392,6 +392,32 @@ void IonBlastClass::Draw_It(void)
 {
 	Point2D point;
 	if (Options.DetailLevel == 2 && TacticalMap->Coord_To_Pixel(Position, point)) {
+		int const density = LogicalSurface->Get_Raster_Scale();
+		if (density > 1) {
+			auto * pixels = static_cast<unsigned short *>(LogicalSurface->Lock());
+			auto const * mask = static_cast<signed char const *>(BlastSurfaces[Lifetime]->Lock());
+			if (pixels && mask) {
+				int const stride = LogicalSurface->Stride() / 2;
+				int const left = point.X - 128, top = point.Y - 64;
+				int const z = TacticalMap->Z_Lepton_To_Pixel(Position.Z);
+				for (int sy = 0; sy < 128; ++sy) for (int sx = 0; sx < 256; ++sx) {
+					int const index = mask[sy * 256 + sx];
+					int const x = left + sx, y = top + sy;
+					if (index <= 0 || x < 0 || y < 0 || x >= TacticalRect.Width || y >= TacticalRect.Height || !Fetch_In_View(x, y, index)) continue;
+					Point2D const offset = SpiralIndexToScreenLUT[index];
+					unsigned short const depth = DepthBuffer->Get_Scroll() - z - y - 3;
+					for (int ry = 0; ry < density; ++ry) for (int rx = 0; rx < density; ++rx) {
+						int const px = x * density + rx, py = y * density + ry;
+						if (*reinterpret_cast<unsigned short const *>(DepthBuffer->Get_Raster_Offset(Point2D(px, py))) <= depth) continue;
+						auto * dest = pixels + (py + TacticalRect.Y * density) * stride + px;
+						*dest = dest[(offset.Y * stride + offset.X) * density];
+					}
+				}
+			}
+			if (pixels) LogicalSurface->Unlock();
+			if (mask) BlastSurfaces[Lifetime]->Unlock();
+			return;
+		}
 		Surface * dest_surface = LogicalSurface;
 		Rect dcliprect = TacticalRect;
 		Surface * source_surface = BlastSurfaces[Lifetime];

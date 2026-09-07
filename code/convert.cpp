@@ -30,6 +30,7 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "always.h"
+#include "hdruntime.hh"
 
 #include "convert.h"
 
@@ -157,6 +158,7 @@ ConvertClass::ConvertClass(PaletteClass const & artpalette, PaletteClass const &
 	//HalfbrightMask(0),
 	//QuarterbrightMask(0)
 {
+	HDAsset::Alias(&artpalette, this);
 	if (IntensityLevels < 1) {
 		IntensityLevels = 1;
 	}
@@ -409,6 +411,7 @@ void ConvertClass::Create_Blitters(void)
 /// </summary>
 ConvertClass::~ConvertClass(void)
 {
+	HDAsset::Forget(this);
 	Destroy_Blitters();
 
 	delete [] IntensityTranslator;

@@ -16,6 +16,7 @@
 #include "dsaudio.h"
 #include "dsurface.h"
 #include "surface.h"
+#include "bsurface.h"
 #include "theme.h"
 #include "vqa.h"
 #include "vqoption.h"
@@ -38,7 +39,7 @@ int MovieInt1 = 0;
 /// <returns>Returns with a pointer to the locked surface memory.</returns>
 void * Movie_Lock_Surface(void)
 {
-	Surface *surf = CurrentVQ->DrawSurface;
+	Surface *surf = CurrentVQ->DecodeSurface ? CurrentVQ->DecodeSurface.get() : CurrentVQ->DrawSurface;
 	void *buffptr = surf->Lock();
 	VQAClass * vqa = CurrentVQ->VQA;
 
@@ -61,6 +62,10 @@ void * Movie_Lock_Surface(void)
 /// <returns>bool; Was the surface released?</returns>
 bool Movie_Unlock_Surface(void)
 {
+	if (CurrentVQ->DecodeSurface) {
+		CurrentVQ->DecodeSurface->Unlock();
+		return CurrentVQ->DrawSurface->Blit_From(CurrentVQ->InitialRect, *CurrentVQ->DecodeSurface, CurrentVQ->InitialRect);
+	}
 	return(CurrentVQ->DrawSurface->Unlock());
 }
 
@@ -172,7 +177,11 @@ VQHandle * Movie_Create(char const * name, Surface * surface, Rect rect1, Rect r
 		}
 
 		handle->DrawSurface = surface;
-		handle->VQA->Set_Draw_Buffer(NULL, surface->Stride() / surface->Bytes_Per_Pixel(), surface->Get_Height());
+		if (surface->Get_Raster_Scale() != 1) {
+			handle->DecodeSurface = std::make_unique<BSurface>(surface->Get_Width(), surface->Get_Height(), surface->Bytes_Per_Pixel());
+		}
+		Surface * decode = handle->DecodeSurface ? handle->DecodeSurface.get() : surface;
+		handle->VQA->Set_Draw_Buffer(NULL, decode->Stride() / decode->Bytes_Per_Pixel(), decode->Get_Height());
 		handle->IsInitialized = true;
 		return(handle);
 	}
@@ -194,6 +203,7 @@ void Movie_Destroy(VQHandle * handle)
 			handle->VQA = NULL;
 		}
 		handle->IsInitialized = false;
+		handle->DecodeSurface.reset();
 	}
 }
 

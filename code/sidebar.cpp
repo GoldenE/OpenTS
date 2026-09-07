@@ -73,6 +73,7 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "always.h"
+#include "hdruntime.hh"
 
 #include "sidebar.h"
 
@@ -401,8 +402,10 @@ void SidebarClass::Init_For_House(void)
 	BASECLASS::Init_For_House();
 
 	PaletteClass pal;
+	HDAsset::ScopedOwner palette_owner(&pal);
 
 	memmove(&pal, MFCD::Retrieve("SIDEBAR.PAL"), sizeof(pal));
+	HDAsset::Alias(MFCD::Retrieve("SIDEBAR.PAL"), &pal);
 
 	for (i = 0; i < PaletteClass::COLOR_COUNT; i++) {
 		pal[i] = RGBClass(pal[i].Get_Red() * 4, pal[i].Get_Green() * 4, pal[i].Get_Blue() * 4);

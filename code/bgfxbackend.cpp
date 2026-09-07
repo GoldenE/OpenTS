@@ -445,7 +445,7 @@ void Backend_Present(void const * pixels, int pitch, int destx, int desty, int d
 				dest[x] = _ConvertTable[source[x]];
 			}
 		}
-		bgfx::updateTexture2D(_FrameTexture, 0, 0, 0, 0, (uint16_t)_FrameWidth, (uint16_t)_FrameHeight, bgfx::copy(_ConvertBuffer, (uint32_t)(_FrameWidth * _FrameHeight * 4)), (uint16_t)(_FrameWidth * 4));
+		bgfx::updateTexture2D(_FrameTexture, 0, 0, 0, 0, (uint16_t)_FrameWidth, (uint16_t)_FrameHeight, bgfx::copy(_ConvertBuffer, (uint32_t)(_FrameWidth * _FrameHeight * 4)));
 	}
 
 	bgfx::TextureHandle source = _FrameTexture;

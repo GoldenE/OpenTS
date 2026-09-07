@@ -54,6 +54,7 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "always.h"
+#include "renderworld.hh"
 
 #include "drive.h"
 
@@ -537,9 +538,7 @@ Matrix3D STDMETHODCALLTYPE DriveLocomotionClass::Draw_Matrix(int *key)
 	}
 
 	if (key && *key != -1) {
-		int keybase = *key << 6;
-		*key = keybase;
-		*key = keybase + CurrentRamp;
+		*key = Render_Voxel_Key(*key, CurrentRamp, 64);
 	}
 
 	Matrix3D basemtx(BASECLASS::Draw_Matrix(key));

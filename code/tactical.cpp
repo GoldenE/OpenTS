@@ -13,6 +13,7 @@
 
 #define INCLUDE_COM
 #include "always.h"
+#include "rendercontext.hh"
 
 #include "tactical.h"
 
@@ -2665,6 +2666,7 @@ void Tactical::Draw_Render_Hooks(ObjectClass * object, Rect const & cliprect)
 {
 	Point2D pixel;
 	if (TacticalMap->Coord_To_Pixel(object->Center_Coord(), pixel)) {
+		ScopedWorldOrigin origin(object->Center_Coord(), TacticalMap->Coord_To_Pixel_Absolute(object->Center_Coord()));
 		object->Draw_Pre_Render(pixel, cliprect);
 		object->Draw_Post_Render(pixel, cliprect);
 	}
@@ -2750,7 +2752,9 @@ void Tactical::Draw_Objects(bool forced)
 				}
 
 				Point2D pixel;
-				if (TacticalMap->Coord_To_Pixel(obj->Center_Coord() + obj->Fetch_Render_Offset(), pixel)) {
+				Coord render_coord = obj->Center_Coord() + obj->Fetch_Render_Offset();
+				if (TacticalMap->Coord_To_Pixel(render_coord, pixel)) {
+					ScopedWorldOrigin origin(render_coord, Coord_To_Pixel_Absolute(render_coord));
 					obj->Draw_Pre_Render(pixel, TacticalRect);
 					obj->Render(TacticalRect, forced, false);
 					obj->Draw_Post_Render(pixel, TacticalRect);
@@ -2770,6 +2774,7 @@ void Tactical::Draw_Objects(bool forced)
 				if (bptr->IsDown) {
 					Point2D pixel;
 					if (Coord_To_Pixel(bptr->Render_Coord(), pixel)) {
+						ScopedWorldOrigin origin(bptr->Render_Coord(), Coord_To_Pixel_Absolute(bptr->Render_Coord()));
 						Rect rect = TacticalRect;
 						bptr->Draw_Overlays(pixel, rect);
 					}

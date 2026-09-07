@@ -92,6 +92,8 @@ class ConvertClass
 		**	won't suffice and manual access to the translation process is necessary.
 		*/
 		void const * Get_Translate_Table(void) const {return(Translator);}
+		void const * Get_Intensity_Table() const { return IntensityTranslator; }
+		int Get_Intensity_Levels() const { return IntensityLevels; }
 
 		/*
 		**	Sets the dynamic remap table so that the remapping blitters will use

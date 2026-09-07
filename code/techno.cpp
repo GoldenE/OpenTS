@@ -129,6 +129,9 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "always.h"
+#include "renderworld.hh"
+#include "rendercontext.hh"
+#include "hdruntime.hh"
 
 #include "techno.h"
 
@@ -6047,8 +6050,21 @@ void TechnoClass::Techno_Draw_Object(ShapeSet const * shapefile, int shapenum, P
 /// <param name="cache">The voxel index cache to look the image up in and store it back to.</param>
 /// <param name="negflags">Shape flags to suppress. Pass SHAPE_NORMAL to let the visual
 /// character choose the flags.</param>
+static void Sync_Voxel_Cache_Generation()
+{
+	static std::uint64_t rendering = 0, assets = 0;
+	if (rendering != Render_Generation() || assets != HDAsset::Invalidation_Generation()) {
+		ObjectTypeClass::Clear_Voxel_Indexes();
+		rendering = Render_Generation();
+		assets = HDAsset::Invalidation_Generation();
+	}
+}
+
+
 void TechnoClass::Draw_Voxel(VoxelDataStruct const & voxeldata, int frame, int key, VoxelIndexClass * cache, Rect const & xcliprect, Point2D const & point, Matrix3D const & matrix, int brightness, ShapeFlags_Type negflags) const
 {
+	Sync_Voxel_Cache_Generation();
+	if (Get_Render_Settings().Mode == RenderMode::HD) key = Render_Voxel_Key(key, Render_Raster_Scale() - 1, 4);
 	ShapeFlags_Type flags = SHAPE_ZGRAD;
 	if (negflags == SHAPE_NORMAL) {
 		bool visible = false;
@@ -6144,6 +6160,8 @@ void TechnoClass::Draw_Voxel(VoxelDataStruct const & voxeldata, int frame, int k
 /// <param name="force_cache">Force rendering even when a cache key is supplied.</param>
 void TechnoClass::Techno_Draw_Voxel_Shadow(VoxelDataStruct const & voxeldata, int layer_index, int key, VoxelIndexClass * cache, Rect const & cliprect, Point2D const & point, Matrix3D const & matrix, bool force_cache) const
 {
+	Sync_Voxel_Cache_Generation();
+	if (Get_Render_Settings().Mode == RenderMode::HD) key = Render_Voxel_Key(key, Render_Raster_Scale() - 1, 4);
 	if (Cloak != UNCLOAKED || voxeldata.VoxLib->Load_Failed()) {
 		return;
 	}
@@ -6172,7 +6190,8 @@ void TechnoClass::Techno_Draw_Voxel_Shadow(VoxelDataStruct const & voxeldata, in
 				cache->Add_Index(key, data);
 			}
 
-			Techno_Draw_Voxel_Shadow(voxeldata, layer_index, key, cache, cliprect, point, matrix, false);
+			if (data != nullptr) Techno_Blit_Voxel(*data, point, cliprect, ShapeFlags_Type(SHAPE_DARKEN|SHAPE_ZGRAD), NORMAL_LIGHT);
+			else Techno_Render_Voxel_Shadow(voxeldata, matrix, point, cliprect, layer_index, ShapeFlags_Type(SHAPE_DARKEN|SHAPE_ZGRAD), false);
 		}
 	}
 }
@@ -6278,7 +6297,7 @@ SurfaceRegion TechnoClass::Techno_Render_Voxel_Shadow(VoxelDataStruct const & vo
 /// <param name="brightness">The brightness to draw the image with.</param>
 void TechnoClass::Techno_Blit_Voxel(StaticBufferClass::Entry const & entry, Point2D const & point, Rect const & cliprect, ShapeFlags_Type flags, int brightness) const
 {
-	BSurface bsurface(entry.Width, entry.Height, 1, entry.Data);
+	BSurface bsurface(entry.Width, entry.Height, 1, entry.Data, entry.Density);
 	flags = ShapeFlags_Type(flags & ~SHAPE_REMAP);
 
 	ConvertClass * converter = NULL;

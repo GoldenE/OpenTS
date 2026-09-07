@@ -58,7 +58,7 @@ class DSurface : public XSurface
 		/*
 		**	Constructs a working surface (not visible).
 		*/
-		DSurface(int width, int height);
+		DSurface(int width, int height, RenderDomain domain=RenderDomain::Source);
 
 		/*
 		**	Get/Release a windows device context for the surface pixels.

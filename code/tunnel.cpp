@@ -8,6 +8,7 @@
  ******************************************************************************/
 
 #include "always.h"
+#include "renderworld.hh"
 
 #include "tunnel.h"
 
@@ -463,7 +464,7 @@ Matrix3D STDMETHODCALLTYPE TunnelLocomotionClass::Draw_Matrix(int * key)
 		int ramp = Map[(Coord const &)(LinkedTo->PositionCoord)].Ramp;
 		Matrix3D mtx;
 		if (key != NULL && *key != -1) {
-			*key = ramp + (*key << 6);
+			*key = Render_Voxel_Key(*key, ramp, 64);
 		}
 		mtx.Make_Identity();
 		if (ramp != 0) {
@@ -515,8 +516,7 @@ Matrix3D STDMETHODCALLTYPE TunnelLocomotionClass::Draw_Matrix(int * key)
 	}
 	Matrix3D mtx = BASECLASS::Draw_Matrix(key);
 	if (key != NULL && *key != -1) {
-		*key = *key << 8;
-		*key |= (int(theta * 32.0) & 64-1);
+		*key = Render_Voxel_Key(*key, int(theta * 32.0) & (64 - 1), 256);
 	}
 	mtx.Rotate_Y(theta);
 	return(mtx);

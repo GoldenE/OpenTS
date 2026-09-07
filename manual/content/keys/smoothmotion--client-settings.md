@@ -15,6 +15,6 @@ The picture trails the simulation by up to one tick. This setting changes drawin
 
 Teleports reset interpolation immediately. Other movements exceeding 1024 leptons along any coordinate axis in one tick draw at the current position, so unusually fast modded objects may remain unsmoothed.
 
-Aircraft shadows, flying voxel debris, sparks, and some attached drawing paths still use simulation positions. Sprite animation frames and locomotor bobbing retain their simulation cadence. These effects can visibly step beside an interpolated body.
+Aircraft shadows, flying voxel debris, sparks, and some attached drawing paths still use simulation positions. Classic sprite animation frames and locomotor bobbing retain their simulation cadence. [HD artwork](/systems/hd-rendering/) can supply directed subframes sampled from the active animation interval and this render clock. Disabling smoothing pins the intra-tick animation contribution to zero.
 
 The setting is read when options are loaded and has no in-game control. It is not currently written by the settings dialog.

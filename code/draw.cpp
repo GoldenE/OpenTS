@@ -32,6 +32,9 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "always.h"
+#include "hdshape.hh"
+#include "hdruntime.hh"
+#include "rastercache.hh"
 
 #include "draw.h"
 
@@ -77,6 +80,7 @@
  *=============================================================================================*/
 void Draw_Shape(Surface & surface, ConvertClass & convert, ShapeSet const * shapefile, int shapenum, Point2D const & point, Rect const & window, ShapeFlags_Type flags, unsigned char const * remap, int height_offset, ZGradientType zgrad, int intensity, ShapeSet const * z_shapefile, int z_shapenum, Point2D z_off)
 {
+	if (HD_Try_Draw_Shape(surface, convert, shapefile, shapenum, point, window, flags, remap, height_offset, zgrad, intensity, z_shapefile, z_shapenum, z_off)) return;
 	assert((flags & SHAPE_PREDATOR) == 0);	// Not yet supported.
 	assert(shapefile != NULL);
 	assert(shapenum != -1);
@@ -89,6 +93,16 @@ void Draw_Shape(Surface & surface, ConvertClass & convert, ShapeSet const * shap
 	int width = shapefile->Get_Width();
 	int height = shapefile->Get_Height();
 	BSurface const shape(rect.Width, rect.Height, 1, (void *)buffer);
+	std::optional<ScopedRasterAsset> raster_asset;
+	if (surface.Get_Raster_Scale() != 1) {
+		auto origin = HDAsset::Query_Source(shapefile);
+		auto size = HDAsset::Query_Source_Size(shapefile);
+		std::size_t remaining = 0;
+		auto base = reinterpret_cast<std::uintptr_t>(shapefile);
+		auto data = reinterpret_cast<std::uintptr_t>(buffer);
+		if (size && data >= base && data - base < *size) remaining = *size - (data - base);
+		raster_asset.emplace(origin ? &*origin : nullptr, shapenum, buffer, remaining, HDAsset::Invalidation_Generation());
+	}
 
 	Point2D zpoint = z_off;
 	BSurface * z_shape;

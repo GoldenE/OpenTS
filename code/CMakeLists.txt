@@ -193,6 +193,7 @@ message(STATUS "${PROJECT_NAME}: Applying linker options...")
 # the Visual Studio generator would hand all of that to ML.EXE as well, which fails.
 add_dependencies(OpenTS bgfx bx bimg)
 target_link_libraries(OpenTS PRIVATE
+    bcrypt
     VQALib
 
     $<TARGET_FILE:bgfx>

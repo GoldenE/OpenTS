@@ -149,6 +149,7 @@
 #include "xpipe.h"
 #include "xstraw.h"
 #include "zbuffer.h"
+#include "rendercontext.hh"
 
 #include "color.hh"
 #include "super.hh"
@@ -373,7 +374,7 @@ void DisplayClass::Set_View_Dimensions(Rect const & dimensions)
 			DepthBuffer = NULL;
 		}
 
-		DepthBuffer = new ZBuffer(TacticalRect);
+		DepthBuffer = new ZBuffer(TacticalRect, Render_Raster_Scale());
 		DepthBuffer->Set_Scroll(ZBUFFER_MAX);
 		DebugString("Allocating ZBuffer (%dx%d)\n", TacticalRect.Width, TacticalRect.Height);
 
@@ -383,7 +384,7 @@ void DisplayClass::Set_View_Dimensions(Rect const & dimensions)
 			AlphaBuffer = NULL;
 		}
 
-		AlphaBuffer = new ABuffer(TacticalRect);
+		AlphaBuffer = new ABuffer(TacticalRect, Render_Raster_Scale());
 		DebugString("Allocating ABuffer (%dx%d)\n", TacticalRect.Width, TacticalRect.Height);
 
 		Show_Mouse();

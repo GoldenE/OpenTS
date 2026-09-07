@@ -34,6 +34,7 @@
 
 #include "ftimer.h"
 #include "timer.h"
+#include "renderstage.hh"
 
 class StageClass {
 
@@ -75,6 +76,10 @@ class StageClass {
 		void Adjust_Rate(int rate) {if (rate != Rate) Rate = rate;}
 		void Just_Set_Rate(int rate) {Rate = rate;}
 		void AI(void) {};
+		RenderStageProgress Fetch_Render_Progress(int intra_tick) const
+		{
+			return Sample_Render_Stage(Timer.Fetch_Elapsed(), Timer.Fetch_Interval(), Step, Timer.Is_Active() && Rate != 0, intra_tick);
+		}
 
 		/// Carries the animation stage to or from a save game.
 		template<typename S>

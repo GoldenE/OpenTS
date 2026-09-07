@@ -43,6 +43,7 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "always.h"
+#include "hdruntime.hh"
 
 #include "score.h"
 
@@ -154,6 +155,8 @@ void ScoreClass::Presentation(void)
 
 	Color = DSurface::Build_Hicolor_Pixel((*fontpal)[68].Get_Red()<<2, (*fontpal)[68].Get_Green()<<2, (*fontpal)[68].Get_Blue()<<2);
 
+	HDAsset::Alias(fontpal, &CCPalette);
+	HDAsset::Forget(fontpal);
 	delete fontpal;
 
 	ConvertClass *drawer = new ConvertClass(CCPalette, CCPalette, *VisibleSurface);
@@ -1202,6 +1205,7 @@ ScoreFontClass::ScoreFontClass(int w, int h, void const * data, ConvertClass * d
 ScoreFontClass::~ScoreFontClass(void)
 {
 	if (ShapePtr != NULL && IsShapeAllocated == true) {
+		HDAsset::Forget(ShapePtr);
 		delete (char *)ShapePtr;
 		ShapePtr = NULL;
 		IsShapeAllocated = false;

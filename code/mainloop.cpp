@@ -14,6 +14,7 @@
 #include "always.h"
 
 #include "mainloop.h"
+#include "rastercache.hh"
 
 #include "_bench.h"
 #include "_command.h"
@@ -212,6 +213,12 @@ void Measure_Tick_Deltas(void)
 
 void Measure_Report(void)
 {
+	char profile[2] = {};
+	if (GetEnvironmentVariableA("OPENTS_HD_PROFILE", profile, sizeof(profile)) == 1 && profile[0] == '1') {
+		DebugString("HDCache: raster-bytes=%zu entries=%zu hits=%llu builds=%llu surface-scratch-bytes=%zu\n",
+			Raster_Asset_Cache_Bytes(), Raster_Asset_Cache_Entries(), static_cast<unsigned long long>(Raster_Asset_Cache_Hits()),
+			static_cast<unsigned long long>(Raster_Asset_Cache_Builds()), Raster_Surface_Scratch_Bytes());
+	}
 	MeasureMaxima const & m = MeasureSinceReport;
 	DebugString("Measure: sim=%u/s render=%u/s ticks=%d span=%d ms (min %d max %d) frame=%d\n",
 		LastFramesPerSecond, LastRenderFramesPerSecond, m.Ticks, m.SpanLastMs, m.SpanMinMs, m.SpanMaxMs, (int)Frame);
@@ -273,7 +280,7 @@ void Motion_Capture(void)
 
 		if (_sequence < _seqsize) {
 			if (_array[_sequence] == NULL) {
-				_array[_sequence] = new BSurface(rect.Width, rect.Height, 2);
+				_array[_sequence] = new BSurface(rect.Width, rect.Height, 2, nullptr, VisibleSurface->Get_Raster_Scale(), RenderDomain::UI);
 			}
 
 			if (_array[_sequence] != NULL) {
@@ -284,7 +291,7 @@ void Motion_Capture(void)
 		} else {
 			Debug_MotionCapture = false;
 
-			DSurface temp_page(rect.Width, rect.Height);
+			DSurface temp_page(rect.Width, rect.Height, RenderDomain::UI);
 
 			for (int index = 0; index < _sequence; index++) {
 				char filename[30];

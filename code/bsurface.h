@@ -34,6 +34,8 @@
 #include "buff.h"
 #include "xsurface.h"
 
+int Checked_Raster_Size(int width, int height, int bytes_per_pixel, int density);
+
 /*
 **	This class handles a simple surface that exists in system RAM.
 */
@@ -43,10 +45,11 @@ class BSurface : public XSurface
 
 	friend class DisplayClass;
 	public:
-		BSurface(int width, int height, int bbp, void * buffer=NULL) :
-			BASECLASS(width, height),
+		~BSurface() override;
+		BSurface(int width, int height, int bbp, void * buffer=NULL, int density=1, RenderDomain domain=RenderDomain::Source) :
+			BASECLASS(width, height, density, domain),
 			BBP(bbp),
-			Buff(buffer, width * height * bbp)
+			Buff(buffer, Checked_Raster_Size(width, height, bbp, density))
 		{
 		}
 
@@ -63,7 +66,7 @@ class BSurface : public XSurface
 		**	Queries information about the surface.
 		*/
 		virtual int Bytes_Per_Pixel(void) const override {return(BBP);}
-		virtual int Stride(void) const override {return(Get_Width() * BBP);}
+		virtual int Stride(void) const override {return(Get_Raster_Width() * BBP);}
 
 	protected:
 

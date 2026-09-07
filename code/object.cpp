@@ -100,6 +100,7 @@
 #include "object.h"
 #include "interp.h"
 #include "renderposition.hh"
+#include "rendercontext.hh"
 
 #include "_logic.h"
 #include "_map.h"
@@ -1192,7 +1193,9 @@ bool ObjectClass::Render(Rect & cliprect, bool forced, bool extras_only) const
 	if (Debug_Map || !MainWindow || (forced || IsToDisplay) && !IsInLimbo) {
 		IsToDisplay = false;
 
-		if (TacticalMap->Coord_To_Pixel(Render_Coord() + Fetch_Render_Offset(), point) || RTTI == RTTI_PARTICLESYSTEM) {
+		Coord render_coord = Render_Coord() + Fetch_Render_Offset();
+		if (TacticalMap->Coord_To_Pixel(render_coord, point) || RTTI == RTTI_PARTICLESYSTEM) {
+			ScopedWorldOrigin origin(render_coord, TacticalMap->Coord_To_Pixel_Absolute(render_coord));
 
 			cliprect = Intersect(cliprect, TacticalRect);
 

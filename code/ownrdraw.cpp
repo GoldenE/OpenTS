@@ -8,6 +8,7 @@
  ******************************************************************************/
 
 #include "always.h"
+#include "rendercontext.hh"
 
 #include "ownrdraw.h"
 
@@ -986,7 +987,7 @@ bool OwnerDraw::Show_Tooltip(bool save_background)
 		}
 		ODTooltip.background = NULL;
 
-		Surface * backgd = new BSurface(ODTooltip.bounds.Width, ODTooltip.bounds.Height, 2);
+		Surface * backgd = new BSurface(ODTooltip.bounds.Width, ODTooltip.bounds.Height, 2, nullptr, VisibleSurface->Get_Raster_Scale(), RenderDomain::UI);
 		ODTooltip.background = backgd;
 
 		Rect drect(0, 0, ODTooltip.bounds.Width, ODTooltip.bounds.Height);
@@ -5273,6 +5274,24 @@ void ODCacheImages(void)
 /// <returns>bool; Was the line drawn?</returns>
 bool ODDrawEdgeGlow(Surface & surf, Point2D const & start, Point2D const & end, int color, unsigned char steps)
 {
+	if (surf.Get_Raster_Scale() != 1) {
+		RasterSurfaceView raster(surf);
+		int scale = surf.Get_Raster_Scale();
+		Point2D first = start * scale;
+		Point2D last = end * scale;
+		if (start.Y == end.Y) {
+			if (first.X > last.X) std::swap(first, last);
+			last.X += scale - 1;
+		} else if (start.X == end.X) {
+			if (first.Y > last.Y) std::swap(first, last);
+			last.Y += scale - 1;
+		}
+		for (int offset = 0; offset < scale; ++offset) {
+			Point2D bias = start.Y == end.Y ? Point2D(0, offset) : Point2D(offset, 0);
+			if (!ODDrawEdgeGlow(raster, first + bias, last + bias, color, steps)) return false;
+		}
+		return true;
+	}
 	Point2D startpoint = start;
 	Point2D endpoint = end;
 
@@ -5945,9 +5964,9 @@ void ODDrawCharRemap(Surface & dst_surf, const char *text, int max_chars, Rect c
 				int src_y = (glyph / chars_per_row) * cell_h;
 
 				int src_y_end = src_y + cell_h;
-				int src_delta = src_i - src_a;
 				unsigned char *alpha_col = src_a + (src_y * src_stride + src_x);
-				unsigned char *dst_col = dst + 2 * (dst_stride * draw_rect.Y + x);
+				int density = dst_surf.Get_Raster_Scale();
+				unsigned char *dst_col = dst + 2 * density * (dst_stride * draw_rect.Y + x);
 
 				for (int sx = src_x; sx < src_x + cell_w; ++sx) {
 					if (src_y < src_y_end) {
@@ -5958,18 +5977,21 @@ void ODDrawCharRemap(Surface & dst_surf, const char *text, int max_chars, Rect c
 						do {
 							unsigned char alpha = *alpha_px;
 							if (alpha != 0) {
-								unsigned char index = alpha_px[src_delta];
-								*dst_px = OD_Blend_Color(*dst_px, remap_table[index], alpha);
+								unsigned char index = src_i[alpha_px - src_a];
+								for (int dy = 0; dy < density; ++dy) for (int dx = 0; dx < density; ++dx) {
+									auto & pixel = dst_px[dy * dst_stride + dx];
+									pixel = OD_Blend_Color(pixel, remap_table[index], alpha);
+								}
 							}
 
-							dst_px += dst_stride;
+							dst_px += dst_stride * density;
 							alpha_px += src_stride;
 							--sy;
 						} while (sy != 0);
 					}
 
 					++alpha_col;
-					dst_col += 2;
+					dst_col += 2 * density;
 				}
 
 				x += font_data.charWidths[(unsigned char)text[i]] + char_spacing;
@@ -6317,6 +6339,11 @@ void ODDrawDimmedBackground(Rect const & rect, HWND hWnd)
 /// <param name="progress">The fill position, as a 16.16 fraction of the rectangle width.</param>
 void ODDrawGradientRect(Rect const & rect, Surface & surface, int color, int progress)
 {
+	if (surface.Get_Raster_Scale() != 1) {
+		RasterSurfaceView raster(surface);
+		ODDrawGradientRect(Render_Rect_To_Raster(surface, rect), raster, color, progress);
+		return;
+	}
 	int fade = 1;
 	int run = (rect.Width * progress) >> 16;
 
@@ -6362,6 +6389,11 @@ void ODDrawGradientRect(Rect const & rect, Surface & surface, int color, int pro
 /// <param name="ypos">The height of the darkened band across the top edge.</param>
 void ODDrawBevelDarken(Rect const & rect, Surface & surface, int xpos, int ypos)
 {
+	if (surface.Get_Raster_Scale() != 1) {
+		RasterSurfaceView raster(surface);
+		ODDrawBevelDarken(Render_Rect_To_Raster(surface, rect), raster, xpos * surface.Get_Raster_Scale(), ypos * surface.Get_Raster_Scale());
+		return;
+	}
 	unsigned short * surfptr = (unsigned short *)surface.Lock();
 
 	if (surfptr != NULL) {
@@ -6413,6 +6445,11 @@ void ODDrawBevelDarken(Rect const & rect, Surface & surface, int xpos, int ypos)
 /// <param name="trans">The strength of the blend, from 0 for invisible to 255 for solid.</param>
 void ODFillRectTrans(Rect const & rect, Surface & surf, int color, int trans)
 {
+	if (surf.Get_Raster_Scale() != 1) {
+		RasterSurfaceView raster(surf);
+		ODFillRectTrans(Render_Rect_To_Raster(surf, rect), raster, color, trans);
+		return;
+	}
 	unsigned short * surfptr = (unsigned short *)surf.Lock();
 
 	if (surfptr != NULL) {

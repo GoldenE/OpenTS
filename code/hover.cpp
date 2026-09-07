@@ -12,6 +12,7 @@
  ******************************************************************************/
 
 #include "always.h"
+#include "renderworld.hh"
 
 #include "hover.h"
 
@@ -146,10 +147,9 @@ Matrix3D STDMETHODCALLTYPE HoverLocomotionClass::Draw_Matrix(int *key)
 	if (!Is_Powered()) {
 		int ramp = Map[(Coord const &)(LinkedTo->PositionCoord)].Ramp;
 		Matrix3D mtx = Get_Slope_Matrix(ramp);
-		mtx.Rotate_Z(LinkedTo->PrimaryFacing.Current().As_Radian32());
+		mtx.Rotate_Z(key ? Render_Voxel_Radians(LinkedTo->PrimaryFacing.Current()) : LinkedTo->PrimaryFacing.Current().As_Radian32());
 		if (key != NULL && *key != -1) {
-			*key = 32 * (ramp + (*key << 6));
-			*key |= LinkedTo->PrimaryFacing.Current().As_Dir32();
+			*key = Render_Voxel_Key(Render_Voxel_Key(*key, ramp, 64), Render_Voxel_Facing(LinkedTo->PrimaryFacing.Current()), Render_Voxel_Facing_Count());
 		}
 		return(mtx);
 	}
