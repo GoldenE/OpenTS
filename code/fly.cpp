@@ -33,6 +33,7 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "always.h"
+#include "renderworld.hh"
 
 #include "fly.h"
 
@@ -1309,11 +1310,10 @@ Matrix3D STDMETHODCALLTYPE FlyLocomotionClass::Draw_Matrix(int * key)
 	mtx.Make_Identity();
 
 	if (key && *key != -1) {
-		*key <<= 5;
-		*key |= LinkedTo->SecondaryFacing.Current().As_Dir32();
+		*key = Render_Voxel_Key(*key, Render_Voxel_Facing(LinkedTo->SecondaryFacing.Current()), Render_Voxel_Facing_Count());
 	}
 
-	mtx.Rotate_Z(LinkedTo->SecondaryFacing.Current().As_Radian32());
+	mtx.Rotate_Z(key ? Render_Voxel_Radians(LinkedTo->SecondaryFacing.Current()) : LinkedTo->SecondaryFacing.Current().As_Radian32());
 
 	if (LinkedTo->HeightAGL > 0 || LinkedTo->TClass->IsDropship) {
 
@@ -1333,7 +1333,7 @@ Matrix3D STDMETHODCALLTYPE FlyLocomotionClass::Draw_Matrix(int * key)
 
 		if (!LinkedTo->TClass->IsDropship) {
 			if (key && *key != -1) {
-				*key <<= 1;
+				*key = Render_Voxel_Key(*key, 0, 2);
 			}
 			if (CurrentSpeed > LinkedTo->TClass->PitchSpeed && !LinkedTo->TClass->IsHunterSeeker) {
 				if (key && *key != -1) {
@@ -1342,7 +1342,7 @@ Matrix3D STDMETHODCALLTYPE FlyLocomotionClass::Draw_Matrix(int * key)
 				mtx.Rotate_Y(float(LinkedTo->TClass->PitchAngle));
 			}
 			if (key && *key != -1) {
-				*key <<= 2;
+				*key = Render_Voxel_Key(*key, 0, 4);
 			}
 
 			if (CurrentSpeed > LinkedTo->TClass->PitchSpeed) {
@@ -1372,7 +1372,7 @@ Matrix3D STDMETHODCALLTYPE FlyLocomotionClass::Draw_Matrix(int * key)
 			}
 		} else {
 			if (key) {
-				*key <<= 3;
+				*key = Render_Voxel_Key(*key, 0, 8);
 			}
 			if (LinkedTo->SecondaryFacing.Is_Rotating_CW()) {
 				if (key) {
@@ -1478,11 +1478,10 @@ Matrix3D STDMETHODCALLTYPE FlyLocomotionClass::Shadow_Matrix(int * key)
 	}
 
 	Matrix3D matrix = Get_Slope_Matrix(ramp);
-	matrix.Rotate_Z(LinkedTo->SecondaryFacing.Current().As_Radian32());
+	matrix.Rotate_Z(Render_Voxel_Radians(LinkedTo->SecondaryFacing.Current()));
 
 	if (key != NULL && *key != -1) {
-		*key = 32 * (ramp + (*key << 6));
-		*key |= LinkedTo->SecondaryFacing.Current().As_Dir32();
+		*key = Render_Voxel_Key(Render_Voxel_Key(*key, ramp, 64), Render_Voxel_Facing(LinkedTo->SecondaryFacing.Current()), Render_Voxel_Facing_Count());
 	}
 	return(matrix);
 }

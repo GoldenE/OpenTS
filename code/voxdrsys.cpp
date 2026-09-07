@@ -16,9 +16,37 @@
 #include "stbuffer.h"
 #include "voxlib.h"
 #include "wwfile.h"
+#include "rendercontext.hh"
+#include "hdruntime.hh"
+#include <memory>
+#include <vector>
 
 BOOL VoxelDrawSystem::EnableLighting;
 BOOL VoxelDrawSystem::EnableZBuffer;
+
+static std::unique_ptr<BSurface> DenseVoxelSurface;
+static std::vector<unsigned char> DenseVoxelDepth;
+
+int VoxelDrawSystem::Raster_Density()
+{
+	return Render_Raster_Scale();
+}
+
+
+unsigned char * VoxelDrawSystem::Raster_Buffer()
+{
+	Surface * surface = Get_Surface();
+	auto * pixels = static_cast<unsigned char *>(surface->Lock());
+	surface->Unlock();
+	return pixels;
+}
+
+
+unsigned char * VoxelDrawSystem::Raster_Depth_Buffer()
+{
+	Get_Surface();
+	return Raster_Density() == 1 ? VoxelDrawZBuffer : DenseVoxelDepth.data();
+}
 
 unsigned char VoxelDrawBuffer[VOXEL_BITMAP_WIDTH * VOXEL_BITMAP_HEIGHT * VOXEL_BITMAP_BPP];
 BSurface VoxelSurface(VOXEL_BITMAP_WIDTH, VOXEL_BITMAP_HEIGHT, VOXEL_BITMAP_BPP, VoxelDrawBuffer);
@@ -61,6 +89,10 @@ int VoxelDrawSystem::Load_VPL_File(FileClass & file)
 {
 	VoxelPaletteLibrary vpl(VoxelRGBColors, VoxelPaletteTranslateTable);
 	int result = vpl.Read_File(file);
+	if (result == 0) {
+		HDAsset::Alias(&vpl, VoxelRGBColors);
+		HDAsset::Alias(&vpl, VoxelPaletteTranslateTable);
+	}
 	VPLRemapStart = vpl.Header.RemapStart;
 	VPLRemapEnd = vpl.Header.RemapEnd;
 	VPLLUTCount = vpl.Header.LUTCount;
@@ -122,6 +154,14 @@ unsigned char *VoxelDrawSystem::Get_Surface_Buffer(void)
 /// </summary>
 Surface * VoxelDrawSystem::Get_Surface(void)
 {
+	int const density = Raster_Density();
+	if (density > 1) {
+		if (!DenseVoxelSurface || DenseVoxelSurface->Get_Raster_Scale() != density) {
+			DenseVoxelSurface = std::make_unique<BSurface>(VOXEL_BITMAP_WIDTH, VOXEL_BITMAP_HEIGHT, 1, nullptr, density);
+			DenseVoxelDepth.assign(VOXEL_BITMAP_WIDTH * VOXEL_BITMAP_HEIGHT * density * density, 0);
+		}
+		return DenseVoxelSurface.get();
+	}
 	return(&VoxelSurface);
 }
 
@@ -138,6 +178,7 @@ Surface * VoxelDrawSystem::Get_Surface(void)
 /// shades through the one table it builds.</remarks>
 void VoxelDrawSystem::Precalculate_Light(VoxelLibrary * voxlib, int layer, int info, Matrix3D const & light_transform, Vector3 const & light)
 {
+	voxlib = voxlib->Render_Variant();
 	Matrix3D light_transform_inv = Matrix3D::Orthogonal_Inverse(light_transform);
 	Vector3 light_tr = light_transform_inv.Rotate_Vector(light);
 	int normal_type = voxlib->Get_Layer_Info(layer, info).NormalType;
@@ -159,6 +200,7 @@ void VoxelDrawSystem::Precalculate_Light(VoxelLibrary * voxlib, int layer, int i
 /// shades through the one table it builds.</remarks>
 void VoxelDrawSystem::Precalculate_Light(VoxelLibrary * voxlib, int layer, int info, Matrix3D const & light_transform, Matrix3D const & view_transform, Vector3 const & light, float specular_strength)
 {
+	voxlib = voxlib->Render_Variant();
 	Matrix3D light_transform_inv = Matrix3D::Orthogonal_Inverse(light_transform);
 	Matrix3D view_transform_inv = Matrix3D::Orthogonal_Inverse(view_transform);
 	Vector3 light_tr = light_transform_inv.Rotate_Vector(light);
@@ -176,6 +218,11 @@ void VoxelDrawSystem::Precalculate_Light(VoxelLibrary * voxlib, int layer, int i
 /// <remarks>Forget this routine and the previous object is still sitting in the buffer.</remarks>
 void VoxelDrawSystem::Reset(void)
 {
+	if (Raster_Density() > 1) {
+		Surface * surface = Get_Surface();
+		surface->Fill(0);
+		std::fill(DenseVoxelDepth.begin(), DenseVoxelDepth.end(), 0);
+	}
 	static int _need_buffer_init = true;
 
 	VoxelRenderDataCount = 0;
@@ -220,6 +267,8 @@ void VoxelDrawSystem::Reset(void)
 /// <remarks>Reset must be called before the first shadow of a frame is prepared.</remarks>
 void VoxelDrawSystem::Prep_For_Shadow(VoxelLibrary * voxlib, int layer, int info, Matrix3D const & camera, Matrix3D const & motion, Vector3 const & light)
 {
+	voxlib = voxlib->Render_Variant();
+	if (VoxelShadowRenderDataCount >= 64) return;
 	VoxelLibrary::LayerInfoStruct const & layer_info = voxlib->Get_Layer_Info(layer, info);
 
 	VoxelShadowRenderStruct & data = VoxelShadowRenderData[VoxelShadowRenderDataCount];
@@ -264,6 +313,8 @@ void VoxelDrawSystem::Prep_For_Shadow(VoxelLibrary * voxlib, int layer, int info
 /// <remarks>Reset must be called before the first object of a frame is prepared.</remarks>
 void VoxelDrawSystem::Prep_For_Object(VoxelLibrary * voxlib, int layer, int info, Matrix3D const & transform)
 {
+	voxlib = voxlib->Render_Variant();
+	if (VoxelRenderDataCount >= 64) return;
 	VoxelLibrary::LayerInfoStruct const & layer_info = voxlib->Get_Layer_Info(layer, info);
 
 	VoxelRenderStruct & data = VoxelRenderData[VoxelRenderDataCount];

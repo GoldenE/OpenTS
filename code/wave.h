@@ -61,6 +61,7 @@ class WaveClass : public ObjectClass
 		void Sonic_Add_Cell(Cell const & cell);
 
 		void Init_Offset_Tables(void);
+		void Draw_Raster(Point2D const & point, Rect const & cliprect, bool sonic);
 
 	private:
 		/*

@@ -2191,6 +2191,24 @@ Armory:
       source: code/builtype.cpp
       guard: null
     level: BuildingTypeClass
+ArtCacheMB:
+  key: ArtCacheMB
+  scopes:
+  - applies_to:
+    - client settings
+    file: sun.ini
+    section:
+      kind: literal
+      name: Video
+    value_type: integer
+    status: generated
+    _provenance:
+      default_candidate: null
+      declared_in: RenderSettings
+      member: budget
+      source: code/renderconfig.cpp
+      guard: null
+    level: RenderSettings
 Artillary:
   key: Artillary
   scopes:
@@ -17289,6 +17307,42 @@ Remapable:
       source: code/techtype.cpp
       guard: null
     level: TechnoTypeClass
+RenderMode:
+  key: RenderMode
+  scopes:
+  - applies_to:
+    - client settings
+    file: sun.ini
+    section:
+      kind: literal
+      name: Video
+    value_type: string
+    status: generated
+    _provenance:
+      default_candidate: Classic
+      declared_in: RenderSettings
+      member: null
+      source: code/renderconfig.cpp
+      guard: null
+    level: RenderSettings
+RenderScale:
+  key: RenderScale
+  scopes:
+  - applies_to:
+    - client settings
+    file: sun.ini
+    section:
+      kind: literal
+      name: Video
+    value_type: integer
+    status: generated
+    _provenance:
+      default_candidate: '2'
+      declared_in: RenderSettings
+      member: settings
+      source: code/renderconfig.cpp
+      guard: null
+    level: RenderSettings
 Renderer:
   key: Renderer
   scopes:
@@ -22943,6 +22997,24 @@ TypeImmune:
       source: code/techtype.cpp
       guard: null
     level: TechnoTypeClass
+UIArtScale:
+  key: UIArtScale
+  scopes:
+  - applies_to:
+    - client settings
+    file: sun.ini
+    section:
+      kind: literal
+      name: Video
+    value_type: integer
+    status: generated
+    _provenance:
+      default_candidate: null
+      declared_in: RenderSettings
+      member: settings
+      source: code/renderconfig.cpp
+      guard: null
+    level: RenderSettings
 URepairRate:
   key: URepairRate
   scopes:
@@ -25067,6 +25139,24 @@ WoodCrateImg:
       source: code/rules.cpp
       guard: null
     level: RulesClass
+WorldArtScale:
+  key: WorldArtScale
+  scopes:
+  - applies_to:
+    - client settings
+    file: sun.ini
+    section:
+      kind: literal
+      name: Video
+    value_type: integer
+    status: generated
+    _provenance:
+      default_candidate: null
+      declared_in: RenderSettings
+      member: settings
+      source: code/renderconfig.cpp
+      guard: null
+    level: RenderSettings
 WorstLowPowerBuildRateCoefficient:
   key: WorstLowPowerBuildRateCoefficient
   scopes:

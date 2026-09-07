@@ -40,6 +40,7 @@
 #include "always.h"
 
 #include "cdfile.h"
+#include "hdruntime.hh"
 
 /*
 **	Pointer to the first search path record.
@@ -213,6 +214,7 @@ void CDFileClass::Add_Search_Drive(char *path)
  *=============================================================================================*/
 void CDFileClass::Clear_Search_Drives(void)
 {
+	HDAsset::Invalidate_All();
 	SearchDriveType	* chain;			// Working pointer to path chain.
 
 	chain = First;

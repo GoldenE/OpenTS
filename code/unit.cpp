@@ -97,6 +97,12 @@
 
 #define INCLUDE_COM
 #include "always.h"
+#include "renderworld.hh"
+#include "rendercontext.hh"
+#include <optional>
+#include "renderstage.hh"
+#include "interp.h"
+#include "goptions.h"
 
 #include "unit.h"
 
@@ -2568,7 +2574,9 @@ void UnitClass::Unit_Draw_Voxel(Point2D xdrawpoint, Rect xcliprect, int brightne
 	}
 
 	Surface * old_surface = LogicalSurface;
+	std::optional<ScopedScreenSpace> screen_space;
 	if (has_turret) {
+		screen_space.emplace();
 		LogicalSurface = EightBitSurface;
 		drawpoint = Point2D(80, 80);
 		flags = ShapeFlags_Type(SHAPE_ALPHA|SHAPE_ZGRAD);
@@ -2585,7 +2593,7 @@ void UnitClass::Unit_Draw_Voxel(Point2D xdrawpoint, Rect xcliprect, int brightne
 	main_matrix = Locomotion->Draw_Matrix(&key);
 
 	if (key != -1) {
-		key = frame | (key << 5);
+		key = Render_Voxel_Key(key, frame, 32);
 	}
 
 	Rect rect = cliprect;
@@ -2607,7 +2615,7 @@ void UnitClass::Unit_Draw_Voxel(Point2D xdrawpoint, Rect xcliprect, int brightne
 	*/
 	if (Class->IsTurretEquipped && Class->AuxVoxel.VoxLib != NULL) {
 		main_matrix.Translate_X(Class->TurretOffset / 8);
-		main_matrix.Rotate_Z(SecondaryFacing.Current().As_Radian32() - PrimaryFacing.Current().As_Radian32());
+		main_matrix.Rotate_Z(Render_Voxel_Radians(SecondaryFacing.Current()) - Render_Voxel_Radians(PrimaryFacing.Current()));
 
 		/*
 		**	A recoiling turret moves "backward" one pixel.
@@ -2622,7 +2630,7 @@ void UnitClass::Unit_Draw_Voxel(Point2D xdrawpoint, Rect xcliprect, int brightne
 
 		Vector3 flh = Vector3(-Get_Class_Weapon_Data(0)->FireFLH.X / 8, 0, -Get_Class_Weapon_Data(0)->FireFLH.Z / 8);
 		barrel_matrix.Translate(-flh);
-		barrel_matrix.Rotate_Y(-BarrelPitch.Current().As_Radian32());
+		barrel_matrix.Rotate_Y(-Render_Voxel_Radians(BarrelPitch.Current()));
 		barrel_matrix.Translate(flh);
 		barrel_matrix.Translate(vec2);
 
@@ -2648,7 +2656,7 @@ void UnitClass::Unit_Draw_Voxel(Point2D xdrawpoint, Rect xcliprect, int brightne
 	} else {
 		voxl = &Class->AuxVoxel2;
 		if (voxl->VoxLib != NULL && voxl->MotLib != NULL) {
-			main_matrix.Rotate_Y(-(BarrelPitch.Current().As_Radian32() - main_matrix.Get_Y_Rotation()));
+			main_matrix.Rotate_Y(-(Render_Voxel_Radians(BarrelPitch.Current()) - main_matrix.Get_Y_Rotation()));
 			main_matrix.Translate(Get_Class_Weapon_Data(0)->FireFLH.X / 8, 0, Get_Class_Weapon_Data(0)->FireFLH.Z / 8);
 			Draw_Voxel(Class->AuxVoxel2, frame, -1, &Class->VoxelIndex, cliprect, drawpoint, Get_Isometric_View_Matrix() * main_matrix, brightness, SHAPE_NORMAL);
 		}
@@ -2659,6 +2667,7 @@ void UnitClass::Unit_Draw_Voxel(Point2D xdrawpoint, Rect xcliprect, int brightne
 		if (SinkingYOffset > 0) {
 			rect = Intersect(rect, Rect(0, 0, TacticalRect.Width, SinkingYOffset - TacticalMap->TacPixelY));
 		}
+		screen_space.reset();
 		Unit_Blit_Voxel(*old_surface, xdrawpoint, rect, brightness);
 		LogicalSurface->Fill_Rect(UnitCompositeDirtyRect, TBLACK);
 		LogicalSurface = old_surface;
@@ -2680,6 +2689,7 @@ void UnitClass::Unit_Draw_Voxel(Point2D xdrawpoint, Rect xcliprect, int brightne
 /// <param name="brightness">The lighting level to draw the unit at.</param>
 void UnitClass::Unit_Draw_Shape(Point2D xdrawpoint, Rect xcliprect, int brightness) const
 {
+	ScopedRenderAnimation facing_sample({}, PrimaryFacing.Current().As_Dir256());
 	VoxelDataStruct * voxl;
 	int shapenum;                // Working shape number.
 	ShapeSet const * shapefile;  // Working shape file pointer.
@@ -2724,6 +2734,7 @@ void UnitClass::Unit_Draw_Shape(Point2D xdrawpoint, Rect xcliprect, int brightne
 				shapefile = (ShapeSet const *)Class->AltImageData;
 			}
 		}
+		ScopedRenderAnimation animation(VisceroidsAsSnoBees ? RenderStageProgress{} : Fetch_Render_Progress(Options.SmoothMotion ? Fetch_Render_Alpha() : 0), PrimaryFacing.Current().As_Dir256());
 		Draw_Object(shapefile, shapenum, xdrawpoint, xcliprect, DIR_N, 256, 0, ZGRAD_90DEG, false, brightness);
 		return;
 	}
@@ -2733,6 +2744,7 @@ void UnitClass::Unit_Draw_Shape(Point2D xdrawpoint, Rect xcliprect, int brightne
 		if (Class->IsJellyfish) {
 			zoff = -TacticalMap->Z_Lepton_To_Pixel(PositionCoord.Z);
 		}
+		ScopedRenderAnimation animation(Fetch_Render_Progress(Options.SmoothMotion ? Fetch_Render_Alpha() : 0), PrimaryFacing.Current().As_Dir256());
 		Draw_Object(shapefile, Fetch_Stage(), xdrawpoint, xcliprect, DIR_N, 256, zoff, ZGRAD_90DEG, false, brightness);
 		return;
 	}
@@ -2784,6 +2796,8 @@ void UnitClass::Unit_Draw_Shape(Point2D xdrawpoint, Rect xcliprect, int brightne
 		Draw_Shape(*LogicalSurface, *NormalDrawer, shapefile, shapenum + shapefile->Get_Count() / 2, drawpoint, xcliprect, ShapeFlags_Type(SHAPE_DARKEN | SHAPE_CENTER | SHAPE_WIN_REL | SHAPE_ALPHA | SHAPE_ZGRAD), NULL, Get_Z_Adjust() - 2);
 
 		Surface * old_surface = LogicalSurface;
+		std::optional<ScopedScreenSpace> screen_space;
+		screen_space.emplace();
 		LogicalSurface = EightBitSurface;
 		Point2D pt = Point2D(80,80);
 
@@ -2797,8 +2811,8 @@ void UnitClass::Unit_Draw_Shape(Point2D xdrawpoint, Rect xcliprect, int brightne
 			int key = -1;
 			Matrix3D mtx = Locomotion->Draw_Matrix(&key);
 			mtx.Translate_X(Class->TurretOffset / 8);
-			double sec = SecondaryFacing.Current().As_Radian32();
-			double pri = PrimaryFacing.Current().As_Radian32();
+			double sec = Render_Voxel_Radians(SecondaryFacing.Current());
+			double pri = Render_Voxel_Radians(PrimaryFacing.Current());
 			mtx.Rotate_Z(sec - pri);
 
 			/*
@@ -2828,7 +2842,7 @@ void UnitClass::Unit_Draw_Shape(Point2D xdrawpoint, Rect xcliprect, int brightne
 			}
 
 			DirType facing = face.Current();
-			nmtx.Rotate_Y(-facing.As_Radian32());
+			nmtx.Rotate_Y(-Render_Voxel_Radians(facing));
 			nmtx.Translate(flh);
 			nmtx.Translate(trans);
 			if (SecondaryFacing.Current().As_Dir4() > 0) {
@@ -2854,7 +2868,10 @@ void UnitClass::Unit_Draw_Shape(Point2D xdrawpoint, Rect xcliprect, int brightne
 		}
 
 		Dir32 d = SecondaryFacing.Current().As_Dir32();
-		Draw_Object(shapefile, ((d + 4) % 32U) + 8 * Class->WalkFrames, pt, srect, DIR_N, 256, 0, ZGRAD_GROUND, false, brightness, NULL, 0, Point2D(0, 0), ShapeFlags_Type(SHAPE_NOTRANS|SHAPE_ALPHA|SHAPE_ZGRAD));
+		{
+			ScopedRenderAnimation turret_sample({}, SecondaryFacing.Current().As_Dir256());
+			Draw_Object(shapefile, ((d + 4) % 32U) + 8 * Class->WalkFrames, pt, srect, DIR_N, 256, 0, ZGRAD_GROUND, false, brightness, NULL, 0, Point2D(0, 0), ShapeFlags_Type(SHAPE_NOTRANS|SHAPE_ALPHA|SHAPE_ZGRAD));
+		}
 
 		/*
 		 * The the voxel barrel above the turret at other angles
@@ -2865,6 +2882,7 @@ void UnitClass::Unit_Draw_Shape(Point2D xdrawpoint, Rect xcliprect, int brightne
 		}
 
 		int apparent_brightness = Apparent_Brightness(brightness);
+		screen_space.reset();
 		Unit_Blit_Voxel(*old_surface, xdrawpoint, xcliprect, apparent_brightness);
 		LogicalSurface->Fill_Rect(UnitCompositeDirtyRect, 0);
 		LogicalSurface = old_surface;

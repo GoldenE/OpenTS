@@ -12,9 +12,11 @@
 #include "rect.h"
 
 #include "theme.hh"
+#include <memory>
 
 class VQAClass;
 class Surface;
+class BSurface;
 struct VQHandle;
 template<class T> class DynamicVectorClass;
 
@@ -50,6 +52,7 @@ struct VQHandle
 	 * Pointer to the surface that the movie's frames are decoded onto before display.
 	 */
 	Surface * DrawSurface;
+	std::unique_ptr<BSurface> DecodeSurface;
 
 	/*
 	 * This selects how the movie is played (0 - 2). Mode 1 hands the repetition over to the

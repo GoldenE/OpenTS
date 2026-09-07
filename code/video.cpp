@@ -12,6 +12,7 @@
 // window it lands, and hands it to the renderer behind video.h.
 
 #include "always.h"
+#include "rendercontext.hh"
 
 #include "video.h"
 
@@ -179,7 +180,7 @@ bool Video_Init(HWND window)
 
 	_Initialized = true;
 
-	if (!Backend_Set_Frame_Size(VideoModeWidth, VideoModeHeight)) {
+	if (!Backend_Set_Frame_Size(VideoModeWidth * Render_Raster_Scale(), VideoModeHeight * Render_Raster_Scale())) {
 		Backend_Shutdown();
 		_Initialized = false;
 		return(false);
@@ -222,7 +223,7 @@ bool Video_Set_Mode(int width, int height)
 		return(false);
 	}
 
-	if (!Backend_Set_Frame_Size(width, height)) {
+	if (!Backend_Set_Frame_Size(width * Render_Raster_Scale(), height * Render_Raster_Scale())) {
 		return(false);
 	}
 

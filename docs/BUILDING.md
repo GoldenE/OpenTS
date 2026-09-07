@@ -157,6 +157,17 @@ ctest --test-dir build/x64 -C Debug --output-on-failure
 ctest --test-dir build/x64 -C Release --output-on-failure
 ```
 
+## HD rendering checks
+
+The HD feature adds asset-independent targets for the versioned pack codec and cache (`HDAssetsTest`), retained-source registry (`HDRuntimeTest`), color/depth compositor (`HDShapeTest`), physical surfaces and reusable raster storage (`RenderCoreTest`), production timer/owner continuity (`RenderStageTest`), dense world rasterization (`HDWorldTest`), and assembled mixed-scene image comparisons (`HDSceneTest`). The [rendering compatibility guide](RENDERING-COMPATIBILITY.md) links their coverage and limitations.
+
+When Python 3.10 or newer is available, CMake also registers `hdpack` for the standard-library authoring tools and their production native validator. Python remains optional for the engine build. All these tests use synthetic data and run in Win32/x64 Debug/Release; they do not establish live GPU-backend behavior.
+
+```powershell
+cmake --build build/x64 --config Debug --target HDAssetsTest HDRuntimeTest HDShapeTest RenderCoreTest RenderStageTest HDWorldTest HDSceneTest
+ctest --test-dir build/x64 -C Debug -R '^(hdassets|hdruntime|hdshape|hdpack|rendercore|renderstage|hdworld|hdscene)$' --output-on-failure
+```
+
 ## Continuous integration
 
 The `Engine` workflow builds every pull request and every push to `main` that touches the engine, its build files, or the workflows themselves. The `Engine nightly` workflow builds on a daily schedule, and skips the build when nothing has been committed since the last one. Both call the same reusable `Engine build` workflow, which on a Windows runner with Visual Studio 2022 configures and builds Win32 and x64 Debug and Release with the commands above, runs the CTest suite, and uploads each configuration's executable, language library, and symbol file as an artifact named for the architecture, configuration, and short commit. The linker map is not uploaded, because the symbol file covers the same ground. After a successful pull-request build, the `Engine build comment` workflow keeps one comment on the pull request with direct nightly.link downloads of that build's artifacts.
@@ -171,7 +182,7 @@ runner's toolchain. It does not establish runtime behavior.
 
 ## Verification boundary
 
-Win32 and x64 Debug and Release were verified on September 5 and 6, 2026 with CMake 4.4.3, Visual Studio 2022 Build Tools, MSVC 19.44.35228, and Windows SDK 10.0.26100. Full builds and all 21 asset-independent CTest entries passed in each configuration, including the opt-in loopback LAN configuration and transport checks described in [Runtime testing](TESTING.md). An earlier x64 Release logger-latency run exceeded its unchanged thresholds during concurrent builds; an isolated rerun passed. The final gate ran the logger check while idle and the other 20 checks separately, covering every entry in all four configurations. Builds retain inherited MSVC warnings, while the three pointer-truncation diagnostics listed above are errors. Contributions should not add new warnings.
+Win32 and x64 Debug and Release were verified on September 7, 2026 with CMake 4.4.3, Visual Studio 2022 Build Tools, MSVC 19.44.35228, and Windows SDK 10.0.26100. Full builds and all 29 asset-independent CTest entries passed in each configuration, including the HD checks above and the opt-in loopback LAN configuration and transport checks described in [Runtime testing](TESTING.md). The final gate ran the logger check sequentially while idle and the other 28 checks separately, covering every entry in all four configurations. Earlier logger-latency failures under concurrent builds remain recorded in local evidence; no threshold was relaxed. Builds retain inherited MSVC warnings, while the three pointer-truncation diagnostics listed above are errors. Contributions should not add new warnings.
 
 Build verification establishes that the supported toolchain compiles and links
 the configured targets and produces the listed artifacts. Runtime behavior is

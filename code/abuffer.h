@@ -20,7 +20,7 @@ class ABuffer
 		friend class IsometricTileTypeClass;
 	public:
 		//ABuffer(void);
-		ABuffer(Rect rect);
+		ABuffer(Rect rect, int density = 1);
 		~ABuffer(void) { Release_Surface(); }
 
 		unsigned Get_Scroll(void) const { return(ScrollOffset); }
@@ -39,6 +39,8 @@ class ABuffer
 		void Update(Rect rect);
 
 		std::uintptr_t Get_Buffer_Offset(Point2D position);
+		std::uintptr_t Get_Raster_Offset(Point2D position);
+		int Get_Raster_Scale() const { return RasterScale; }
 
 		std::uintptr_t Wrap_Overflow(std::uintptr_t position) const;
 		std::uintptr_t Wrap_Underflow(std::uintptr_t position) const;
@@ -51,6 +53,7 @@ class ABuffer
 
 	private:
 		void Release_Surface(void);
+		bool Fill_Raster(unsigned short value, Rect rect);
 
 	public:
 		/*
@@ -97,6 +100,7 @@ class ABuffer
 		 */
 		int BufferWidth;
 		int BufferHeight;
+		int RasterScale;
 };
 
 inline std::uintptr_t ABuffer::Wrap_Overflow(std::uintptr_t position) const

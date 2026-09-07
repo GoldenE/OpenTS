@@ -46,6 +46,7 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "always.h"
+#include "rendercontext.hh"
 
 #include <cstdint>
 
@@ -110,6 +111,20 @@ bool XSurface::Draw_Line(Point2D const & startpoint, Point2D const & endpoint, i
  *=============================================================================================*/
 bool XSurface::Draw_Line(Rect const & xcliprect, Point2D const & startpoint, Point2D const & endpoint, int color)
 {
+	if (RasterScale != 1) {
+		RasterSurfaceView raster(*this);
+		Point2D start = Render_Draw_Point(*this, startpoint), end = Render_Draw_Point(*this, endpoint);
+		bool horizontal = abs(end.X - start.X) >= abs(end.Y - start.Y);
+		bool drawn = false;
+		for (int i = 0; i < RasterScale; ++i) {
+			Point2D offset(horizontal ? 0 : i, horizontal ? i : 0);
+			drawn |= raster.Draw_Line(Render_Rect_To_Raster(*this, xcliprect), start + offset, end + offset, color);
+		}
+		Rect clip = Render_Rect_To_Raster(*this, xcliprect);
+		drawn |= raster.Fill_Rect(clip, Rect(start.X, start.Y, RasterScale, RasterScale), color);
+		drawn |= raster.Fill_Rect(clip, Rect(end.X, end.Y, RasterScale, RasterScale), color);
+		return drawn;
+	}
 	//assert(xcliprect.Is_Valid());
 
 	/*
@@ -252,6 +267,14 @@ bool XSurface::Draw_Line(Rect const & xcliprect, Point2D const & startpoint, Poi
 /// <remarks>The dash pattern must hold at least 16 entries.</remarks>
 int XSurface::Draw_Dashed_Line(Point2D const & startpoint, Point2D const & endpoint, unsigned color, bool pattern[], int offset)
 {
+	if (RasterScale != 1) {
+		int length = std::max(abs(endpoint.X - startpoint.X), abs(endpoint.Y - startpoint.Y));
+		for (int i = 0; i <= length; ++i) {
+			Point2D p = length ? startpoint + (endpoint - startpoint) * i / length : startpoint;
+			if (pattern[(offset + i) & 15] && Get_Rect().Is_Point_Within(p)) Put_Pixel(p, color);
+		}
+		return (offset + length + 1) & 15;
+	}
 	Point2D start = startpoint;
 	Point2D end = endpoint;
 
@@ -672,6 +695,10 @@ bool XSurface::Draw_Rect(Rect const & cliprect, Rect const & crect, int color)
  *=============================================================================================*/
 int XSurface::Get_Pixel(Point2D const & point) const
 {
+	if (RasterScale != 1) {
+		RasterSurfaceView raster(*this);
+		return raster.Get_Pixel(Render_Point_To_Raster(*this, point));
+	}
 	int color = 0;
 	void * pointer = ((Surface*)this)->Lock(point);
 	if (pointer != NULL) {
@@ -705,6 +732,11 @@ int XSurface::Get_Pixel(Point2D const & point) const
  *=============================================================================================*/
 bool XSurface::Put_Pixel(Point2D const & point, int color)
 {
+	if (RasterScale != 1) {
+		RasterSurfaceView raster(*this);
+		Point2D p = Render_Draw_Point(*this, point);
+		return raster.Fill_Rect(raster.Get_Rect(), Rect(p.X, p.Y, RasterScale, RasterScale), color);
+	}
 	void * pointer = Lock(point);
 	if (pointer != NULL) {
 		if (Bytes_Per_Pixel() == 2) {
@@ -727,6 +759,7 @@ bool XSurface::Put_Pixel(Point2D const & point, int color)
 /// clipped away.</returns>
 int XSurface::Get_Pixel_Clip(Point2D const & point, Rect const & rect) const
 {
+	if (RasterScale != 1) return rect.Is_Point_Within(point) ? Get_Pixel(point) : 0;
 	unsigned pixel = 0;
 
 	if (rect.Is_Point_Within(point)) {
@@ -752,6 +785,7 @@ int XSurface::Get_Pixel_Clip(Point2D const & point, Rect const & rect) const
 /// <returns>bool; Was the pixel plotted?</returns>
 bool XSurface::Put_Pixel_Clip(Point2D const & point, int color, Rect const & rect)
 {
+	if (RasterScale != 1) return rect.Is_Point_Within(point) && Put_Pixel(point, color);
 	if (rect.Is_Point_Within(point)) {
 		void *buffptr = Lock(point);
 
@@ -835,6 +869,10 @@ static void *surface_quick_fill(void *buf, int count, int color)
  *=============================================================================================*/
 bool XSurface::Fill_Rect(Rect const & cliprect, Rect const & fillrect, int color)
 {
+	if (RasterScale != 1) {
+		RasterSurfaceView raster(*this);
+		return raster.Fill_Rect(Render_Rect_To_Raster(*this, cliprect), Render_Rect_To_Raster(*this, fillrect), color);
+	}
 	if (!fillrect.Is_Valid()) return(false);
 
 	/*
@@ -943,6 +981,10 @@ bool XSurface::Fill_Rect_Trans(Rect const & rect, RGBClass const & color, unsign
 /// <returns>bool; Was the ellipse drawn?</returns>
 bool XSurface::Draw_Ellipse(Point2D point, int radx, int rady, Rect cliprect, int color)
 {
+	if (RasterScale != 1) {
+		RasterSurfaceView raster(*this);
+		return raster.Draw_Ellipse(Render_Draw_Point(*this, point), radx * RasterScale, rady * RasterScale, Render_Rect_To_Raster(*this, cliprect), color);
+	}
 	int pitch = Stride() >> 1;
 
 	/*
@@ -1269,6 +1311,7 @@ bool XSurface::Blit_From(Rect const & destrect, Surface const & source, Rect con
  *=============================================================================================*/
 bool XSurface::Blit_From(Rect const & dcliprect, Rect const & destrect, Surface const & source, Rect const & scliprect, Rect const & sourcerect, bool trans, bool)
 {
+	if (RasterScale != 1 || source.Get_Raster_Scale() != 1) return Render_Blit_Surface(*this, dcliprect, destrect, source, scliprect, sourcerect, trans);
 	Rect drect = destrect;
 	Rect srect = sourcerect;
 

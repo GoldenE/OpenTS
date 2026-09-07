@@ -34,6 +34,8 @@
 
 #define INCLUDE_COM
 #include "always.h"
+#include "rendercontext.hh"
+#include "hdruntime.hh"
 
 #include "_alpha.h"
 #include "_command.h"
@@ -543,6 +545,7 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * command_line , in
 		RawFileClass *cfile = new RawFileClass(CONFIG_FILE_NAME);
 
 		ConfigINI.Load(*cfile, false);
+		Load_Render_Settings(ConfigINI);
 		Options.ScreenWidth = ConfigINI.Get_Int("Video", "ScreenWidth", Options.ScreenWidth);
 		Options.ScreenHeight = ConfigINI.Get_Int("Video", "ScreenHeight", Options.ScreenHeight);
 
@@ -623,10 +626,10 @@ int CALLBACK WinMain ( HINSTANCE instance , HINSTANCE , char * command_line , in
 		LogicalSurface = HiddenSurface;
 		Update_Visible_Surface(HiddenSurface);
 
-		DepthBuffer = new ZBuffer(Rect(TacticalRect.X, TacticalRect.Y, 480, 480 - TacticalRect.Y));
+		DepthBuffer = new ZBuffer(Rect(TacticalRect.X, TacticalRect.Y, 480, 480 - TacticalRect.Y), HiddenSurface->Get_Raster_Scale());
 		DepthBuffer->Set_Scroll(ZBUFFER_MAX);
 
-		AlphaBuffer = new ABuffer(Rect(TacticalRect.X, TacticalRect.Y, 480, 480 - TacticalRect.Y));
+		AlphaBuffer = new ABuffer(Rect(TacticalRect.X, TacticalRect.Y, 480, 480 - TacticalRect.Y), HiddenSurface->Get_Raster_Scale());
 
 		MouseCursor = new WWMouseClass(MainWindow);
 		MouseCursor->Capture_Mouse();
@@ -844,6 +847,7 @@ void __cdecl Prog_End(void)
 	}
 
 	if (BuildingTypeClass::BuildingZShape != NULL) {
+		HDAsset::Forget(BuildingTypeClass::BuildingZShape);
 		delete (void *)BuildingTypeClass::BuildingZShape;
 		BuildingTypeClass::BuildingZShape = NULL;
 	}

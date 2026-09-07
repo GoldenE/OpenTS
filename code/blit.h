@@ -44,6 +44,6 @@ bool Bit_Blit(Surface & dest, Rect const & dcliprect, Rect const & ddrect, Surfa
 bool RLE_Blit(Surface & dest, Rect const & dcliprect, Rect const & ddrect, Surface const & source, Rect const & scliprect, Rect const & ssrect, RLEBlitter const & blitter, int zdepth = 0, ZGradientType zgrad = ZGRAD_135DEG, int alpha = 1000, int = 0, Surface * zshape = NULL, Point2D zpoint = Point2D(0, 0));
 
 
-int Buffer_Size(Surface & surface, int width, int height);
+int Buffer_Size(Surface const & surface, int width, int height);
 bool To_Buffer(Surface const & surface, Rect const & rect, Buffer & buffer);
 bool From_Buffer(Surface & surface, Rect const & rect, Buffer const & buffer);

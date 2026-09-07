@@ -40,6 +40,7 @@
 
 #define INCLUDE_COM
 #include "always.h"
+#include "hdruntime.hh"
 
 #include "animtype.h"
 
@@ -172,6 +173,7 @@ AnimTypeClass::AnimTypeClass(char const *ininame) :
 AnimTypeClass::~AnimTypeClass(void)
 {
 	if (IsDemandLoad && ImageData) {
+		HDAsset::Forget(ImageData);
 		delete [] (char*) ImageData;
 		ImageData = NULL;
 	}
@@ -219,6 +221,7 @@ void AnimTypeClass::Init(TheaterType theater)
 			} else {
 				if (anim->IsTheater || anim->IsNewTheater) {
 					if (anim->ImageData != NULL) {
+						HDAsset::Forget(anim->ImageData);
 						delete [] (char*) anim->ImageData;
 						anim->ImageData = NULL;
 					}
@@ -681,6 +684,7 @@ void AnimTypeClass::Free_Image(void)
 {
 	if (IsDemandLoad && ImageData != NULL && IsFreeAfterPlaying) {
 		DebugString("Freeing loaded image for %s\n", Full_Name());
+		HDAsset::Forget(ImageData);
 		delete [] (char*) ImageData;
 		ImageData = NULL;
 	}

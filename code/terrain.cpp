@@ -54,6 +54,9 @@
 
 #define INCLUDE_COM
 #include "always.h"
+#include "renderstage.hh"
+#include "interp.h"
+#include "goptions.h"
 
 #include "terrain.h"
 
@@ -428,6 +431,7 @@ void TerrainClass::Draw_It(Point2D const & point, Rect const & cliprect) const
 		if (!Is_Animating()) {
 			flags = ShapeFlags_Type(flags | SHAPE_ZWRITE);
 		}
+		ScopedRenderAnimation animation((Class->IsAnimated || IsCrumbling) ? Fetch_Render_Progress(Options.SmoothMotion ? Fetch_Render_Alpha() : 0) : RenderStageProgress{});
 		Draw_Shape(*LogicalSurface, *drawer, shapedata, shapenum, drawpoint, cliprect, flags, NULL, zadjust - 12, ZGRAD_90DEG, tint);
 		if (DrawShapeShadows) {
 			Draw_Shape(*LogicalSurface, *cellptr.Drawer, shapedata, shapenum + shapedata->Get_Count() / 2, drawpoint, cliprect, ShapeFlags_Type(flags|SHAPE_DARKEN), NULL, zadjust - 2);

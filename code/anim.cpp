@@ -69,6 +69,7 @@
 #include "cell.h"
 #include "combat.h"
 #include "conquer.h"
+#include "interp.h"
 #include "crc.h"
 #include "draw.h"
 #include "globals.h"
@@ -498,6 +499,9 @@ bool AnimClass::Render(Rect & rect, bool forced, bool extras_only) const
  *=============================================================================================*/
 void AnimClass::Draw_It(Point2D const & point, Rect const & cliprect) const
 {
+	auto sample = Sample_Render_Animation_Owner(this, {Fetch_Render_Progress(Options.SmoothMotion ? Fetch_Render_Alpha() : 0), 0});
+	if (IsDisabled || Delay || IsBrandNew) sample.Progress = {};
+	ScopedRenderAnimation animation(sample.Progress, sample.Facing);
 	if (!IsInvisible && Class->DetailLevel <= Options.DetailLevel && (!IsFogged || !Class->IsShouldFogRemove)) {
 		BStart(BENCH_ANIMS);
 		ShapeSet const * shapefile = (ShapeSet const *)Get_Image_Data();

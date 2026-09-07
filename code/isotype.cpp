@@ -13,6 +13,9 @@
 
 #define INCLUDE_COM
 #include "always.h"
+#include "renderworld.hh"
+#include "rendercontext.hh"
+#include "hdruntime.hh"
 
 #include <cstdint>
 
@@ -302,6 +305,7 @@ IsometricTileTypeClass::~IsometricTileTypeClass(void)
 	}
 
 	if (ImageData != NULL && IsFileLoaded) {
+		HDAsset::Forget(ImageData);
 		delete [] (unsigned char *)ImageData;
 	}
 
@@ -711,7 +715,11 @@ void IsometricTileTypeClass::Read_Control_File(TheaterType theater, bool from_cc
 	sprintf(palname, "ISO%s.PAL", Theaters[theater].Suffix);
 	CCFileClass palette(palname);
 	if (palette.Is_Available()) {
-		palette.Read(&IsoTilePalette, sizeof(IsoTilePalette));
+		int const palette_bytes = palette.Read(&IsoTilePalette, sizeof(IsoTilePalette));
+		if (palette_bytes == sizeof(IsoTilePalette)) {
+			palette.Register_HD_Data(&IsoTilePalette, sizeof(IsoTilePalette));
+			HDAsset::Rebind(&IsoTilePalette, &IsoTilePalette);
+		}
 		unsigned char * color = (unsigned char *)IsoTilePalette;
 		for (i = 0; i < sizeof(PaletteClass); i++) {
 			*color <<= 2;
@@ -1269,6 +1277,7 @@ void IsometricTileTypeClass::Load_Tiles(bool skipiteration, bool isrand)
 			if (ptr->IsFileLoaded && strlen(ptr->Filename)) {
 				if (!skipiteration && ptr->UseCount == 0 && (!isrand || !ptr->IsRequiredForRMG)) {
 					if (ptr->ImageData != NULL) {
+						HDAsset::Forget(ptr->ImageData);
 						delete [] (unsigned char *)ptr->ImageData;
 						ptr->ImageData = NULL;
 					}
@@ -1299,11 +1308,13 @@ int IsometricTileTypeClass::Load_Tile_Data(void)
 	CCFileClass file(Filename);
 	int size = file.Size();
 	if (ImageData != NULL) {
+		HDAsset::Forget(ImageData);
 		delete [] (unsigned char *)ImageData;
 	}
 	unsigned char * data = new unsigned char[size];
 	ImageData = data;
 	file.Read(data, size);
+	file.Register_HD_Data(data, size);
 
 	IsoTileSet * tileset = (IsoTileSet *)ImageData;
 
@@ -1619,6 +1630,120 @@ unsigned char _iso_run_lengths[ISO_DRAW_WIDTH][ISO_DRAW_WIDTH*ISO_DRAW_HEIGHT];
 char IsoSpanTablesBuilt;
 
 
+static void Draw_Terrain_Raster(IsoTileSet const & set, int subtile, LightConvertClass & drawer, Surface & surface, int x, int y, Rect clip, int height,
+	int brightness, bool use_z, bool fill, bool depth_only, bool fog, int fog_color, int intensity_levels, unsigned short const * translate)
+{
+	IsoTileRecord const * record = set.Fetch_Record_Pointer(subtile);
+	if (!record || surface.Bytes_Per_Pixel() != 2) return;
+	int const density = surface.Get_Raster_Scale();
+	clip = Render_Rect_To_Raster(surface, Intersect(clip, surface.Get_Rect()));
+	if (clip.Width <= 0 || clip.Height <= 0) return;
+	auto * pixels = static_cast<unsigned char *>(surface.Lock());
+	if (!pixels) return;
+	auto * remap = AlphaLightingRemapInit.Init(intensity_levels);
+	auto const * light = remap->Get_Table(brightness);
+	use_z = use_z && record->IsHasZData;
+	unsigned short const base = static_cast<unsigned short>(DepthBuffer->Bounds.Y + DepthBuffer->Get_Scroll() - y - set.Pixel_Height() + height * set.Pixel_Height() / -2);
+	unsigned short const halfmask = DSurface::Get_Halfbright_Mask();
+	unsigned short const fogpixel = halfmask & (fog_color >> 1);
+	auto pin = HDAsset::Fetch(&set);
+	auto variant = pin && pin->Type == HDAsset::Kind::TERRAIN ? HDAsset::Select_Variant(*pin, Render_Art_Scale(surface.Get_Render_Domain())) : nullptr;
+	if (variant && (variant->LogicalWidth != set.Pixel_Width() || variant->LogicalHeight != set.Pixel_Height() || variant->LogicalFrames != set.Tile_Count())) {
+		HDAsset::Report_Fallback(pin->Name.c_str(), "terrain logical canvas or subtile count differs from classic");
+		variant = nullptr;
+	}
+	auto frame = variant ? HDAsset::Select_Frame(*variant, subtile) : nullptr;
+	if (frame) {
+		int const left = record->IsHasExtraData ? std::min(0, record->ExtraX - record->X) : 0;
+		int const top = record->IsHasExtraData ? std::min(0, record->ExtraY - record->Y) : 0;
+		int const right = record->IsHasExtraData ? std::max(48, record->ExtraX - record->X + record->ExtraWidth) : 48;
+		int const bottom = record->IsHasExtraData ? std::max(24, record->ExtraY - record->Y + record->ExtraHeight) : 24;
+		if (frame->X < left * static_cast<int>(variant->Scale) || frame->Y < top * static_cast<int>(variant->Scale) ||
+			frame->X + static_cast<int>(frame->Width) > right * static_cast<int>(variant->Scale) || frame->Y + static_cast<int>(frame->Height) > bottom * static_cast<int>(variant->Scale)) {
+			HDAsset::Report_Fallback(pin->Name.c_str(), "terrain imagery exceeds classic redraw bounds");
+			frame = nullptr;
+		}
+	}
+	Point2D const origin(x * density, y * density);
+	auto blend = [](unsigned short source, unsigned short destination, unsigned coverage) {
+		if (coverage == 255) return source;
+		if (!coverage) return destination;
+		RGBClass const a = DSurface::Deconstruct_Hicolor_Pixel(source);
+		RGBClass const b = DSurface::Deconstruct_Hicolor_Pixel(destination);
+		return static_cast<unsigned short>(DSurface::Build_Hicolor_Pixel((a.Get_Red() * coverage + b.Get_Red() * (255 - coverage) + 127) / 255,
+			(a.Get_Green() * coverage + b.Get_Green() * (255 - coverage) + 127) / 255, (a.Get_Blue() * coverage + b.Get_Blue() * (255 - coverage) + 127) / 255));
+	};
+	auto draw = [&](int px, int py, int source, unsigned char const * color, unsigned char const * depths, bool extra) {
+		if (px < clip.X || py < clip.Y || px >= clip.X + clip.Width || py >= clip.Y + clip.Height) return;
+		unsigned char index = color[source];
+		auto * dest = reinterpret_cast<unsigned short *>(pixels + py * surface.Stride()) + px;
+		Point2D const ringpoint(px, py - TacticalRect.Y * density);
+		auto * depth = reinterpret_cast<unsigned short *>(DepthBuffer->Get_Raster_Offset(ringpoint));
+		if (use_z && (fill || depth_only || fog)) {
+			if (fill) *dest = fogpixel;
+			if (fog && *depth > 0) *dest = fogpixel + (halfmask & (*dest >> 1));
+			*depth = depth_only ? 0xffff : 0;
+			return;
+		}
+		unsigned short sampledepth = base + (use_z ? depths[source] : 0);
+		HDAsset::Frame const * sampleframe = (!fill && !depth_only && !fog) ? frame : nullptr;
+		int sample = -1;
+		if (sampleframe) {
+			auto scaled = [=](int value) { int const n = value * static_cast<int>(variant->Scale); return n >= 0 ? n / density : -((-n + density - 1) / density); };
+			int const sx = scaled(px - origin.X) - sampleframe->X;
+			int const sy = scaled(py - origin.Y) - sampleframe->Y;
+			if (sx >= 0 && sy >= 0 && sx < static_cast<int>(sampleframe->Width) && sy < static_cast<int>(sampleframe->Height)) sample = sy * sampleframe->Width + sx;
+		}
+		if (extra && sample >= 0) {
+			TerrainRasterSpan const base_span = Render_Terrain_Span(py - origin.Y, density);
+			if (px - origin.X >= base_span.First && px - origin.X < base_span.First + base_span.Count) return;
+		}
+		if (extra && !index && sample < 0) return;
+		if (sample >= 0) sampledepth = base - sampleframe->Depth[sample];
+		if (use_z && *depth < sampledepth) return;
+		auto const alpha = *reinterpret_cast<unsigned short const *>(AlphaBuffer->Get_Raster_Offset(ringpoint));
+		unsigned short output = translate[index | light[alpha]];
+		if (sample >= 0) {
+			auto const * rgba = &sampleframe->Color[sample * 4];
+			if (!rgba[3]) return;
+			// The palette converter remains the owner of terrain lighting.
+			int const level = light[alpha] >> 8;
+			int const red = drawer.UseIonLighting ? drawer.IonRedTint : drawer.NormalRedTint;
+			int const green = drawer.UseIonLighting ? drawer.IonGreenTint : drawer.NormalGreenTint;
+			int const blue = drawer.UseIonLighting ? drawer.IonBlueTint : drawer.NormalBlueTint;
+			int const divisor = std::max(1, intensity_levels - 1) * 1000;
+			int const r = std::clamp(rgba[0] * level * red * 2 / divisor, 0, 255);
+			int const g = std::clamp(rgba[1] * level * green * 2 / divisor, 0, 255);
+			int const b = std::clamp(rgba[2] * level * blue * 2 / divisor, 0, 255);
+			output = DSurface::Build_Hicolor_Pixel(r, g, b);
+			bool const remapped = !sampleframe->Remap.empty() && sampleframe->Remap[sample];
+			if (remapped) output = translate[(15 + sampleframe->Remap[sample]) | light[alpha]];
+			if (!sampleframe->Shadow.empty() && sampleframe->Shadow[sample]) output = blend((*dest >> 1) & halfmask, output, sampleframe->Shadow[sample]);
+			output = blend(output, *dest, rgba[3]);
+		}
+		*dest = output;
+		if (use_z) *depth = sampledepth;
+	};
+	auto const * color = reinterpret_cast<unsigned char const *>(record + 1);
+	auto const * depths = reinterpret_cast<unsigned char const *>(record) + record->ZDataOffset;
+	for (int row = 0; row < ISO_DRAW_HEIGHT * density; ++row) {
+		TerrainRasterSpan const span = Render_Terrain_Span(row, density);
+		for (int col = 0; col < span.Count; ++col) draw(origin.X + span.First + col, origin.Y + row, span.Source + col / density, color, depths, false);
+	}
+	if (record->IsHasExtraData && !fill && !depth_only && !fog) {
+		color = reinterpret_cast<unsigned char const *>(record) + record->ExtraOffset;
+		depths = reinterpret_cast<unsigned char const *>(record) + record->ExtraZOffset;
+		int const ex = origin.X + (record->ExtraX - record->X) * density;
+		int const ey = origin.Y + (record->ExtraY - record->Y) * density;
+		for (int row = 0; row < record->ExtraHeight * density; ++row) {
+			for (int col = 0; col < record->ExtraWidth * density; ++col) draw(ex + col, ey + row, row / density * record->ExtraWidth + col / density, color, depths, true);
+		}
+	}
+	AlphaLightingRemapInit.Deinit(remap);
+	surface.Unlock();
+}
+
+
 /// <summary>
 /// Draws a single isometric terrain tile.
 /// This is the low level tile blitter that the map renderer relies on for every terrain
@@ -1715,6 +1840,11 @@ void IsometricTileTypeClass::Draw_Tile(LightConvertClass * drawer, int subtile, 
 			}
 			cell_variation = 0;
 			tileptr = next;
+		}
+		if (surface.Get_Raster_Scale() > 1 || (Get_Render_Settings().Mode == RenderMode::HD && surface.Get_Render_Domain() == RenderDomain::World)) {
+			auto const * set = static_cast<IsoTileSet const *>(tileptr->Get_Image_Data());
+			if (set) Draw_Terrain_Raster(*set, subtile, *drawer, surface, x, y, cliprect, height, brightness, use_z, fill, depth_only, fog, fog_color, drawer->IntensityLevels, static_cast<unsigned short const *>(drawer->IntensityTranslator));
+			return;
 		}
 		Point2D work(x, y);
 		bool clipped_out = false;

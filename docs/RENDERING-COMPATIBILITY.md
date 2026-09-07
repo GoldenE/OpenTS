@@ -2,6 +2,10 @@
 
 The native renderer retains the established pixel formats and integer arithmetic across Win32 and x64. `renderportable.cpp` owns palette adjustment, spotlight brightening, and indexed interpolation; `voxlib.cpp` owns voxel traversal. The legacy C entry-point names in `winasm.cpp` are wrappers around C++ implementations and do not require assembly instructions or MASM.
 
+Classic mode remains the reference for the legacy raster behavior below. Opt-in [HD rendering](../manual/content/systems/hd-rendering.md) intentionally increases physical sampling while retaining logical geometry, numerical depth, and simulation state. [HD sidecars](../manual/content/formats/hd-pack.md) own the versioned asset contract and fallback rules.
+
+The [retained source adapters](../tests/hdassets/README.md#retained-source-adapters) define source tokens, parsed-owner aliases, raw-span eligibility, and cleanup/invalidation. New consumers use those value tokens instead of inventing a universal archive lookup or treating decoded objects as raw files. [Render-stage sampling](../tests/renderstage/README.md) owns the directed timer and cache-refresh checks; [core composition checks](../tests/rendercore/README.md) and [assembled scenes](../tests/hdworld/README.md) describe synthetic rendering coverage. Live timing uses the separate [runtime measurement workflow](TESTING.md#hd-rendering-measurements).
+
 ## Measured assembly parity
 
 `tests/asmparity/vectors/render.tar.gz` contains 572 synthetic input/output vectors captured from the original Win32 assembly. CMake extracts the losslessly compressed `render.txt` into the build directory and verifies its hash. The portable implementations passed live assembly comparisons and persisted-vector comparisons in Win32 Debug and Release during retirement. These checks establish byte output and tested state transitions, not full-engine rendering or performance. [Runtime testing](TESTING.md) owns the runtime verification boundary.

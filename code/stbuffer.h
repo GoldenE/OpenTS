@@ -51,6 +51,7 @@ class StaticBufferClass
 			 */
 			unsigned short Width;
 			unsigned short Height;
+			unsigned short Density;
 
 			/*
 			 * Pointer to the run length compressed rows of the image, which sit in the
@@ -64,8 +65,8 @@ class StaticBufferClass
 
 		unsigned char * Reserve(int size)
 		{
-			unsigned char * new_cursor = Cursor + size;
-			if (new_cursor <= Buffer + Size) {
+			if (size >= 0 && static_cast<unsigned>(size) <= Size - static_cast<unsigned>(Cursor - Buffer)) {
+				unsigned char * new_cursor = Cursor + size;
 				unsigned char * old_cursor = Cursor;
 				Cursor = new_cursor;
 				return(old_cursor);

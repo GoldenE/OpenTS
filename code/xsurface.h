@@ -44,7 +44,7 @@ class XSurface : public Surface
 		typedef Surface BASECLASS;
 
 	public:
-		XSurface(int width=0, int height=0) : BASECLASS(width, height), LockCount(0) {}
+		XSurface(int width=0, int height=0, int raster_scale=1, RenderDomain domain=RenderDomain::Source) : BASECLASS(width, height, raster_scale, domain), LockCount(0) {}
 		///virtual ~XSurface(void) {}
 
 		/*

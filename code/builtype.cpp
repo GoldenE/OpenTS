@@ -57,6 +57,7 @@
 
 #define INCLUDE_COM
 #include "always.h"
+#include "hdruntime.hh"
 
 #include "builtype.h"
 
@@ -542,6 +543,7 @@ void BuildingTypeClass::Init_Anim(BStateType state, int start, int count, int ra
 void BuildingTypeClass::Fetch_Z_Data(void)
 {
 	if (BuildingZShape != NULL) {
+		HDAsset::Forget(BuildingZShape);
 		delete [] (char*) BuildingZShape;
 		BuildingZShape = NULL;
 	}

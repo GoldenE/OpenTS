@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <climits>
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
@@ -107,11 +108,50 @@ template<class Buffer> void Exercise(unsigned short neutral)
 	std::cout << "Validated native ring addresses at " << std::hex << start << std::dec << '\n';
 }
 
+template<class Buffer> void Exercise_Density(unsigned short neutral)
+{
+	for (Rect invalid : {Rect(0,0,INT_MAX,INT_MAX),Rect(0,0,INT_MAX,1),Rect(0,0,1,INT_MAX),Rect(0,0,4097,1)}) {
+		bool rejected = false;
+		try { Buffer oversized(invalid,4); } catch (std::invalid_argument const &) { rejected = true; }
+		Check(rejected,"oversized raster ring was not rejected before dimension multiplication");
+	}
+	for (int density : {2, 3, 4}) {
+		Buffer buffer(Rect(0, 0, 8, 6), density);
+		int const width = 8 * density;
+		int const count = width * 6 * density;
+		auto * surface = buffer.Get_Surface();
+		auto * data = static_cast<unsigned short *>(surface->Lock());
+		std::uintptr_t const start = reinterpret_cast<std::uintptr_t>(data);
+		surface->Unlock();
+		Check(buffer.Get_Buffer_End() == start + count * 2, "dense ring extent");
+		Check(buffer.Get_Buffer_Offset(Point2D(7, 5)) == start + (5 * density * width + 7 * density) * 2, "logical addressing scales both axes");
+		for (int n = 0; n < count; ++n) Check(data[n] == neutral, "dense constructor fill");
+		buffer.Pan(2, 1, 19);
+		int origin = (2 * density + width * density) % count;
+		Check(buffer.Get_Raster_Offset(Point2D()) == start + origin * 2, "dense pan offset");
+		Check(buffer.Get_Scroll() == 32767, "dense pan preserves logical depth bias");
+		buffer.Pan(-3, -2, 29);
+		origin = (origin - 3 * density - 2 * density * width + count) % count;
+		Check(buffer.Get_Raster_Offset(Point2D()) == start + origin * 2, "dense negative pan wraps");
+		Check(buffer.Get_Scroll() == 32769, "dense negative bias remains logical");
+		for (int n = 0; n < count; ++n) data[n] = static_cast<unsigned short>(n + 1);
+		BSurface copy(width, 6 * density, 2);
+		buffer.Copy_To(&copy, Rect(0, 0, 8, 6));
+		auto const * copied = static_cast<unsigned short const *>(copy.Lock());
+		for (int n = 0; n < count; ++n) Check(copied[n] == data[(origin + n) % count], "dense unwrapped copy");
+		copy.Unlock();
+		copy.Check_Guards();
+		surface->Check_Guards();
+	}
+}
+
 int main()
 {
 	try {
 		Exercise<ABuffer>(0x007f);
 		Exercise<ZBuffer>(0xffff);
+		Exercise_Density<ABuffer>(0x007f);
+		Exercise_Density<ZBuffer>(0xffff);
 		return 0;
 	} catch (std::exception const & error) {
 		std::cerr << error.what() << '\n';

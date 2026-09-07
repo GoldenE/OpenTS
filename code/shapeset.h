@@ -49,6 +49,7 @@
 class ShapeSet
 {
 	public:
+		static void operator delete(void * data) noexcept;
 		/*
 		**	Fetch pointer to raw shape data (NULL if not present or empty).
 		*/

@@ -41,11 +41,13 @@
 **	a small but useful set of functions. Emphasis is placed on supporting those functions which are
 **	likely to have hardware assist.
 */
+#include "renderdomain.hh"
+
 class Surface
 {
 	public:
 		/// Surface(void) : Width(0), Height(0) {}
-		Surface(int width, int height) : Width(width), Height(height) {}
+		Surface(int width, int height, int raster_scale = 1, RenderDomain domain = RenderDomain::Source) : Width(width), Height(height), RasterScale(raster_scale), Domain(domain) {}
 		virtual ~Surface(void) {};
 
 		/*
@@ -96,6 +98,7 @@ class Surface
 		**	Gets and frees a direct pointer to the video memory.
 		*/
 		virtual void * Lock(Point2D point = Point2D(0, 0)) const = 0;
+		void * Lock_Raster(Point2D physical_point = Point2D(0, 0)) const { return Lock(physical_point); }
 		virtual bool Unlock(void) const = 0;
 		virtual bool Can_Lock(int x = 0, int y = 0) const {return(true);}
 		/// Is the surface ready to draw to? The mouse code consults this before rendering.
@@ -110,6 +113,10 @@ class Surface
 		virtual Rect Get_Rect(void) const {return(Rect(0, 0, Width, Height));}
 		virtual int Get_Width(void) const {return(Width);}
 		virtual int Get_Height(void) const {return(Height);}
+		int Get_Raster_Scale() const { return RasterScale; }
+		int Get_Raster_Width() const { return Width * RasterScale; }
+		int Get_Raster_Height() const { return Height * RasterScale; }
+		RenderDomain Get_Render_Domain() const { return Domain; }
 
 		/*
 		**	Hack function to serve the purpose that RTTI was invented for, but since
@@ -125,4 +132,6 @@ class Surface
 		*/
 		int Width;
 		int Height;
+		int RasterScale;
+		RenderDomain Domain;
 };

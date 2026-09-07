@@ -30,6 +30,7 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "always.h"
+#include "hdruntime.hh"
 
 #include "pcx.h"
 
@@ -218,6 +219,9 @@ Surface * Read_PCX_File(FileClass & file_handle, PaletteClass * palette, void * 
 		file_handle.Read (palette, 256L * sizeof ( RGB ));
 	}
 
+	if (buffer != nullptr) {
+		HDAsset::Register_Stream(file_handle, pic);
+	}
 	file_handle.Close();
 	return(pic);
 }

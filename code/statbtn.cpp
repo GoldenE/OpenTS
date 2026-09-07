@@ -216,12 +216,15 @@ void StaticButtonClass::Set_Text(char const * text, bool resize)
  *=============================================================================================*/
 void StaticButtonClass::Draw_Background(void)
 {
+	if (Width <= 0 || Height <= 0) return;
+	int required = Buffer_Size(*LogicalSurface, Width, Height);
+	if (Background.Get_Size() != required) Background.Reset();
 	/*
 	**	If the background hasn't been recorded from the buffer, then
 	**	allocate and record the background image now.
 	*/
 	if (Background.Get_Buffer() == NULL && Width > 0 && Height > 0) {
-		new(&Background) Buffer(Width * Height * LogicalSurface->Bytes_Per_Pixel());
+		new(&Background) Buffer(required);
 		if (Background.Get_Buffer() != NULL) {
 			To_Buffer(*LogicalSurface, Rect(X, Y, Width, Height), Background);
 		}

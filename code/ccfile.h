@@ -36,6 +36,9 @@
 #include "cdfile.h"
 
 #include <climits>
+#include <string>
+
+class MixFileClass;
 
 
 /*
@@ -67,6 +70,8 @@ class CCFileClass : public CDFileClass
 		virtual unsigned int Get_Date_Time(void) override;
 		virtual bool Set_Date_Time(unsigned int datetime) override;
 		virtual void Error(int error, int canretry = false, char const * filename=NULL) override;
+		void Register_HD_Data(void const * data, int length) const;
+		std::string const & HD_Physical_Path() const { return HDPath; }
 
 	private:
 
@@ -91,6 +96,8 @@ class CCFileClass : public CDFileClass
 		**	range from zero to the size of the file in bytes.
 		*/
 		int Position;
+		MixFileClass * HDArchive = nullptr;
+		std::string HDPath;
 
 		// Force these to never be invoked.
 		CCFileClass const & operator = (CCFileClass const & c);

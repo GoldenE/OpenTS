@@ -14,6 +14,7 @@
 #include "bsurface.h"
 
 #include <cstdlib>
+#include <stdexcept>
 
 #define ZBUFFER_COLOR  0xFFFF
 #define ZBUFFER_BPP    2		/// Bytes per depth entry (16 bit surface).
@@ -27,10 +28,16 @@
 /// drawn always pass the depth test.
 /// </summary>
 /// <param name="rect">The area the buffer is to cover.</param>
-ZBuffer::ZBuffer(Rect rect) :
-	BufferWidth(rect.Width),
-	BufferHeight(rect.Height)
+ZBuffer::ZBuffer(Rect rect, int density) :
+	BufferWidth(0),
+	BufferHeight(0),
+	RasterScale(density)
 {
+	if (density < 1 || density > 4 || rect.Width <= 0 || rect.Height <= 0 || rect.Width > 16384 / density || rect.Height > 16384 / density) {
+		throw std::invalid_argument("Invalid raster ring dimensions");
+	}
+	BufferWidth = rect.Width * density;
+	BufferHeight = rect.Height * density;
 	Bounds = rect;
 	BufferSize = BufferWidth * BufferHeight * ZBUFFER_BPP;
 	SurfacePtr = new BSurface(BufferWidth, BufferHeight, ZBUFFER_BPP);
@@ -55,6 +62,7 @@ ZBuffer::ZBuffer(Rect rect) :
 /// <param name="rect">The region of the destination surface to copy into.</param>
 void ZBuffer::Copy_To(Surface *surface, Rect rect)
 {
+	rect = Rect(rect.X * RasterScale, rect.Y * RasterScale, rect.Width * RasterScale, rect.Height * RasterScale);
 	//if (!surface) return;
 
 	unsigned short *surfbuffptr = (unsigned short *)(surface->Lock(Point2D(rect.X, rect.Y)));
@@ -149,8 +157,8 @@ void ZBuffer::Pan(int x, int y, unsigned short value)
 {
 	int target_col;
 	int target_row;
-	int x_delta = x;
-	int y_delta = y;
+	int x_delta = x * RasterScale;
+	int y_delta = y * RasterScale;
 
 	/// The column the buffer origin currently sits on.
 	int current_col = (SurfaceOffset / ZBUFFER_BPP) % BufferWidth;
@@ -175,21 +183,21 @@ void ZBuffer::Pan(int x, int y, unsigned short value)
 			/// exposed strip straddles the wrap point.
 			if (x_delta < 0) {
 				if (target_col < 0) {
-					Fill(value, Rect(0, 0, current_col, BufferHeight));
+					Fill_Raster(value, Rect(0, 0, current_col, BufferHeight));
 					target_col += BufferWidth;
-					Fill(value, Rect(target_col, 0, BufferWidth - target_col, BufferHeight));
+					Fill_Raster(value, Rect(target_col, 0, BufferWidth - target_col, BufferHeight));
 
 				} else {
-					Fill(value, Rect(target_col, 0, -x_delta, BufferHeight));
+					Fill_Raster(value, Rect(target_col, 0, -x_delta, BufferHeight));
 				}
 
 			} else if (target_col >= BufferWidth) {
-				Fill(value, Rect(current_col, 0, BufferWidth - current_col, BufferHeight));
+				Fill_Raster(value, Rect(current_col, 0, BufferWidth - current_col, BufferHeight));
 				target_col -= BufferWidth;
-				Fill(value, Rect(0, 0, target_col, BufferHeight));
+				Fill_Raster(value, Rect(0, 0, target_col, BufferHeight));
 
 			} else {
-				Fill(value, Rect(current_col, 0, x_delta, BufferHeight));
+				Fill_Raster(value, Rect(current_col, 0, x_delta, BufferHeight));
 			}
 		}
 
@@ -201,7 +209,7 @@ void ZBuffer::Pan(int x, int y, unsigned short value)
 
 			/// The scroll bias is what turns a screen row into a depth value, so carrying
 			/// the pan in it is what spares the entries already stored from a rewrite.
-			ScrollOffset -= y_delta;
+			ScrollOffset -= y;
 
 			int prev_offset = SurfaceOffset;
 
@@ -254,6 +262,12 @@ bool ZBuffer::Fill(unsigned short value)
 /// <returns>bool; Was the region filled?</returns>
 bool ZBuffer::Fill(unsigned short value, Rect rect)
 {
+	return Fill_Raster(value, Rect(rect.X * RasterScale, rect.Y * RasterScale, rect.Width * RasterScale, rect.Height * RasterScale));
+}
+
+
+bool ZBuffer::Fill_Raster(unsigned short value, Rect rect)
+{
 	return(SurfacePtr->Fill_Rect(rect, value));
 }
 
@@ -268,6 +282,8 @@ bool ZBuffer::Fill(unsigned short value, Rect rect)
 void ZBuffer::Update(Rect rect)
 {
 	std::uintptr_t buffptr = Get_Buffer_Offset(Point2D(rect.X, rect.Y));
+	rect.Width *= RasterScale;
+	rect.Height *= RasterScale;
 
 	for (int i = 0; i < rect.Height; ++i) {
 
@@ -295,10 +311,12 @@ void ZBuffer::Update(Rect rect)
 /// <returns>Returns with the address of the entry within the depth buffer.</returns>
 std::uintptr_t ZBuffer::Get_Buffer_Offset(Point2D pos)
 {
-	std::uintptr_t buffptr = (std::uintptr_t)SurfacePtr->Lock(pos);
+	return Get_Raster_Offset(Point2D(pos.X * RasterScale, pos.Y * RasterScale));
+}
 
-	SurfacePtr->Unlock();
 
-	buffptr += SurfaceOffset;
+std::uintptr_t ZBuffer::Get_Raster_Offset(Point2D pos)
+{
+	std::uintptr_t buffptr = BufferStart + SurfaceOffset + (static_cast<std::intptr_t>(pos.Y) * BufferWidth + pos.X) * ZBUFFER_BPP;
 	return(Wrap_Overflow(buffptr));
 }

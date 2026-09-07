@@ -8,6 +8,7 @@
  ******************************************************************************/
 
 #include "always.h"
+#include "hdruntime.hh"
 
 #include "scheme.h"
 
@@ -94,7 +95,9 @@ ConvertClass *Build_Light_Converter(HSVClass & hsv, const PaletteClass & base, c
 		(*remapped)[i + 16] = HSVClass(hue, sat, val);
 	}
 
-	return(new LightConvertClass(*remapped, screenpalette, typicalsurface, r, g, b, false, indexes, intensity_levels));
+	auto converter = new LightConvertClass(*remapped, screenpalette, typicalsurface, r, g, b, false, indexes, intensity_levels);
+	HDAsset::Alias(&base, converter);
+	return converter;
 }
 
 
@@ -138,7 +141,9 @@ ConvertClass *Build_Converter(HSVClass & hsv, const PaletteClass & base, const P
 		*remapped = pal;
 	}
 
-	return(new ConvertClass(pal, screenpalette, typicalsurface));
+	auto converter = new ConvertClass(pal, screenpalette, typicalsurface);
+	HDAsset::Alias(&base, converter);
+	return converter;
 }
 
 

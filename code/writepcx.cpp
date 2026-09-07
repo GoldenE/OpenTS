@@ -32,6 +32,7 @@
  *= = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =*/
 
 #include "always.h"
+#include "rendercontext.hh"
 
 #include "dsurface.h"
 #include "pcx.h"
@@ -88,6 +89,10 @@ static const unsigned char rle_full_run = (rle_max_run|rle_code);   // Full char
  *=============================================================================================*/
 bool Write_PCX_File(FileClass & file, Surface & pic, PaletteClass * palette)
 {
+	if (pic.Get_Raster_Scale() != 1) {
+		RasterSurfaceView raster(pic);
+		return Write_PCX_File(file, raster, palette);
+	}
 	unsigned char palcopy[256 * sizeof(RGB)];
 	char	* ptr;
 	//RGB	* pal;

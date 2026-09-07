@@ -24,8 +24,11 @@
 #include "scenario.h"
 #include "surface.h"
 #include "tactical.h"
+#include "rendercontext.hh"
+#include "renderportable.h"
 
 #include <algorithm>
+#include <vector>
 
 DynamicVectorClass<SpotLightClass *> SpotLights;
 
@@ -197,6 +200,35 @@ void SpotLightClass::Clear_All(void)
 /// ramp, so the light reads as a glow over whatever has been rendered beneath it. Nothing
 /// is drawn if the light lies off screen or under fog of war.
 /// </summary>
+static void Draw_Spotlight_Raster(Surface & surface, Surface const & mask, Rect const & target, Rect const & cliprect, int const * lookup)
+{
+	int const density = surface.Get_Raster_Scale();
+	Rect origin = Render_Rect_To_Raster(surface, target.Bias_To(cliprect));
+	Point2D const residual = Render_Origin_Residual(density);
+	origin.X += residual.X;
+	origin.Y += residual.Y;
+	Rect const clipped = Intersect(origin, Render_Rect_To_Raster(surface, Intersect(cliprect, surface.Get_Rect())));
+	if (!clipped.Is_Valid()) return;
+	RasterSurfaceView output(surface);
+	auto const view = output.View();
+	auto const * source = static_cast<unsigned char const *>(mask.Lock());
+	if (!source || !view.Pixels) { if (source) mask.Unlock(); return; }
+	std::vector<unsigned char> row(clipped.Width);
+	for (int y = clipped.Y; y < clipped.Y + clipped.Height; ++y) {
+		int const sy = (y - origin.Y) / density;
+		if (sy < 0 || sy >= mask.Get_Height()) continue;
+		for (int x = 0; x < clipped.Width; ++x) {
+			int const sx = (clipped.X + x - origin.X) / density;
+			row[x] = sx >= 0 && sx < mask.Get_Width() ? source[sy * mask.Stride() + sx] : 0;
+		}
+		auto * destination = reinterpret_cast<unsigned short *>(view.Pixels + y * view.Pitch) + clipped.X;
+		if (lookup) PortableRender::Brighten_Color_Lookup(PortableRender::ColorFormat::RGB565, row.data(), destination, clipped.Width, view.Pitch, clipped.Width, 1, lookup);
+		else PortableRender::Brighten_Color(PortableRender::ColorFormat::RGB565, row.data(), destination, clipped.Width, view.Pitch, clipped.Width, 1);
+	}
+	mask.Unlock();
+}
+
+
 void SpotLightClass::Draw_It(void)
 {
 	static char _index_table[SPOTLIGHT_MAX_RADIUS + 10] = {
@@ -226,6 +258,10 @@ void SpotLightClass::Draw_It(void)
 				index = index * Size / SpotLightClass::SPOTLIGHT_SURFACE_COUNT;
 			}
 			Surface * ssurf = SpotLightSurfaces[index];
+			if (dsurf->Get_Raster_Scale() > 1) {
+				Draw_Spotlight_Raster(*dsurf, *ssurf, drect, dcliprect, SpotLightMMXBuffer);
+				return;
+			}
 			int stride = dsurf->Stride();
 			bool overlapped = false;
 			Rect srect(0, 0, 255, 127);

@@ -44,6 +44,7 @@
 #include "always.h"
 
 #include "ccfile.h"
+#include "hdruntime.hh"
 
 #include "_mixfile.h"
 #include "mixfile.h"
@@ -400,6 +401,8 @@ int CCFileClass::Open(int rights)
 	**	Always close the file if it was open.
 	*/
 	Close();
+	HDArchive = nullptr;
+	HDPath.clear();
 
 	/*
 	**	Perform a preliminary check to see if the specified file
@@ -408,7 +411,13 @@ int CCFileClass::Open(int rights)
 	**	upgrade files to work.
 	*/
 	if ((rights & WRITE) || BASECLASS::Is_Available()) {
-		return(BASECLASS::Open(rights));
+		int opened = BASECLASS::Open(rights);
+		if (opened) {
+			char physical[MAX_PATH];
+			DWORD length = GetFullPathNameA(File_Name(), MAX_PATH, physical, nullptr);
+			HDPath = length > 0 && length < MAX_PATH ? physical : File_Name();
+		}
+		return opened;
 	}
 
 	/*
@@ -448,6 +457,7 @@ int CCFileClass::Open(int rights)
 			new (&Data) ::Buffer(pointer, length);
 			Position = 0;
 		}
+		HDArchive = mixfile;
 
 	} else {
 
@@ -458,6 +468,12 @@ int CCFileClass::Open(int rights)
 		return(BASECLASS::Open(rights));
 	}
 	return(true);
+}
+
+
+void CCFileClass::Register_HD_Data(void const * data, int length) const
+{
+	HDAsset::Register_File(File_Name(), data, length, HDArchive, HDPath.c_str());
 }
 
 

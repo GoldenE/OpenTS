@@ -252,7 +252,7 @@ void WaveClass::Init_Offset_Tables(void)
 	int stride = LogicalSurface->Stride() >> 1;
 
 	for (int facing = 0; facing < FACING_COUNT; facing++) {
-		DirectionStrides[facing] = _facing_row_steps[facing] * stride + _facing_col_steps[facing];
+		DirectionStrides[facing] = (_facing_row_steps[facing] * stride + _facing_col_steps[facing]) * LogicalSurface->Get_Raster_Scale();
 	}
 
 	for (int i = 0; i < _INTENSITY_TABLE_SIZE; i++) {
@@ -591,8 +591,46 @@ void WaveClass::Draw_It(Point2D const & point, Rect const & cliprect) const
 /// </summary>
 /// <param name="point">The screen point that the wave's origin lands upon.</param>
 /// <param name="cliprect">The clipping rectangle to draw within.</param>
+void WaveClass::Draw_Raster(Point2D const & point, Rect const & cliprect, bool sonic)
+{
+	int const density = LogicalSurface->Get_Raster_Scale();
+	auto * pixels = static_cast<unsigned short *>(LogicalSurface->Lock());
+	if (!pixels) return;
+	int const stride = LogicalSurface->Stride() / 2;
+	int const xoff = point.X - WaveStartMiddle.X;
+	int const yoff = point.Y - WaveStartMiddle.Y + TacticalRect.Y;
+	int const zpix = Tactical::Z_Lepton_To_Pixel(StartCoord.Z);
+	Rasterize_Polygon(WaveShape, DrawData);
+	if (sonic) Init_Offset_Tables();
+	bool const forward = !sonic || (Direction > FACING_NE && Direction < FACING_W);
+	for (int i = 0; DrawData.Points && i < DrawData.Count; ++i) {
+		int const row = forward ? i : DrawData.Count - 1 - i;
+		int const y = row + DrawData.BaseY + yoff;
+		if (y < cliprect.Y || y >= cliprect.Y + cliprect.Height) continue;
+		int const left = std::max(cliprect.X, DrawData.Points[row].X + xoff);
+		int const right = std::min(cliprect.X + cliprect.Width - 1, DrawData.Points[row].Y + xoff);
+		unsigned short const depth = DepthBuffer->Get_Scroll_Delta(zpix) - y - 2;
+		for (int j = 0; j <= right - left; ++j) {
+			int const x = forward ? left + j : right - j;
+			for (int ry = 0; ry < density; ++ry) for (int rx = 0; rx < density; ++rx) {
+				int const px = x * density + rx, py = y * density + ry;
+				auto const * z = reinterpret_cast<unsigned short const *>(DepthBuffer->Get_Raster_Offset(Point2D(px, py - TacticalRect.Y * density)));
+				if (*z <= depth) continue;
+				auto * dest = pixels + py * stride + px;
+				if (sonic) Set_Sonic_Pixel(x, xoff, abs(y - yoff + TacticalRect.Y - WaveStartMiddle.Y), y, dest, cliprect);
+				else Set_Laser_Pixel(dest, LaserEC);
+			}
+		}
+	}
+	LogicalSurface->Unlock();
+	delete [] DrawData.Points;
+	DrawData.Points = nullptr;
+}
+
+
 void WaveClass::Draw_Sonic(Point2D const & point, Rect const & cliprect)
 {
+	if (LogicalSurface->Get_Raster_Scale() > 1) { Draw_Raster(point, cliprect, true); return; }
 	int zpix = Tactical::Z_Lepton_To_Pixel(StartCoord.Z);
 
 	unsigned short * surfptr = (unsigned short *)LogicalSurface->Lock();
@@ -799,6 +837,7 @@ void WaveClass::Draw_Sonic(Point2D const & point, Rect const & cliprect)
 /// <param name="cliprect">The clipping rectangle to draw within.</param>
 void WaveClass::Draw_Laser(Point2D const & point, Rect const & cliprect)
 {
+	if (LogicalSurface->Get_Raster_Scale() > 1) { if (Options.DetailLevel == 2) Draw_Raster(point, cliprect, false); return; }
 	if (Options.DetailLevel == 2) {
 		int zpix = Tactical::Z_Lepton_To_Pixel(StartCoord.Z);
 

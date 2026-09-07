@@ -47,6 +47,7 @@
 
 #define INCLUDE_COM
 #include "always.h"
+#include "rendercontext.hh"
 
 #include "unittype.h"
 
@@ -207,7 +208,7 @@ UnitType UnitTypeClass::From_Name(char const * name)
 void UnitTypeClass::One_Time(void)
 {
 	if (EightBitSurface == NULL) {
-		EightBitSurface = new BSurface(160, 160, 1);
+		EightBitSurface = new BSurface(160, 160, 1, nullptr, Render_Raster_Scale(), RenderDomain::World);
 		EightBitSurface->Fill(TBLACK);
 	}
 

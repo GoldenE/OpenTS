@@ -46,6 +46,7 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "always.h"
+#include "rendercontext.hh"
 
 #include "dsurface.h"
 
@@ -101,8 +102,8 @@ int DSurface::PrimaryColorMode = COLORMODE_565;
  * HISTORY:                                                                                    *
  *   02/07/1997 JLB : Created.                                                                 *
  *=============================================================================================*/
-DSurface::DSurface(int width, int height) :
-	BASECLASS(width, height),
+DSurface::DSurface(int width, int height, RenderDomain domain) :
+	BASECLASS(width, height, Render_Raster_Scale(domain), domain),
 	BytesPerPixel(2),
 	IsPrimary(false),
 	GDIBitmap(NULL),
@@ -111,6 +112,9 @@ DSurface::DSurface(int width, int height) :
 	GDIBuffer(NULL),
 	Pitch(0)
 {
+	Checked_Raster_Size(width, height, 2, RasterScale);
+	width *= RasterScale;
+	height *= RasterScale;
 	/*
 	 * BITMAPINFO carries room for a single color entry, but a bitfields bitmap is
 	 * described by three masks following the header, so the header is declared with
@@ -222,7 +226,7 @@ DSurface::~DSurface(void)
  *=============================================================================================*/
 DSurface * DSurface::Create_Primary(void)
 {
-	DSurface * surface = new DSurface(VideoModeWidth, VideoModeHeight);
+	DSurface * surface = new DSurface(VideoModeWidth, VideoModeHeight, RenderDomain::UI);
 
 	if (surface == NULL || surface->Get_Buffer() == NULL) {
 		delete surface;
@@ -262,6 +266,12 @@ HDC DSurface::GetDC(void)
 	 * drawing on them, which is what it did when this context came from DirectDraw.
 	 */
 	LockCount++;
+	if (RasterScale != 1) {
+		SaveDC(GDIDC);
+		SetMapMode(GDIDC, MM_ANISOTROPIC);
+		SetWindowExtEx(GDIDC, Width, Height, nullptr);
+		SetViewportExtEx(GDIDC, Get_Raster_Width(), Get_Raster_Height(), nullptr);
+	}
 	return(GDIDC);
 }
 
@@ -273,6 +283,7 @@ HDC DSurface::GetDC(void)
 /// <returns>int; Always one. The context outlives the call and is reused.</returns>
 int DSurface::ReleaseDC(HDC hdc)
 {
+	if (RasterScale != 1) RestoreDC(hdc, -1);
 	/*
 	 * GDI batches its drawing, so the pixels are not all there until it is flushed.
 	 * Everything else reads them directly.
@@ -480,7 +491,7 @@ bool DSurface::Blit_From(Rect const & dcliprect, Rect const & destrect, Surface 
 	 * The software blitter handles everything except a size change between two of these
 	 * surfaces, which GDI stretches instead.
 	 */
-	if (trans || !ssource.Is_GDI_Backed() || samesize) {
+	if (trans || !ssource.Is_GDI_Backed() || samesize || RasterScale != 1 || ssource.Get_Raster_Scale() != 1) {
 		bool result = BASECLASS::Blit_From(dcliprect, destrect, ssource, scliprect, sourcerect, trans, unknown);
 		if (result && IsPrimary) {
 			Video_Mark_Dirty();
@@ -590,6 +601,22 @@ bool DSurface::Fill_Rect(Rect const & cliprect, Rect const & fillrect, int color
 /// <returns>bool; Was the rectangle filled?</returns>
 bool DSurface::Fill_Rect_Trans(Rect const & xcliprect, const RGBClass & color, unsigned int opacity)
 {
+	if (RasterScale != 1) {
+		Rect area = Render_Rect_To_Raster(*this, Intersect(Get_Rect(), xcliprect));
+		RasterSurfaceView raster(*this);
+		auto view = raster.View();
+		if (!view.Pixels || !area.Is_Valid()) return false;
+		unsigned weight = std::min(opacity, 100u);
+		for (int y = area.Y; y < area.Y + area.Height; ++y) {
+			auto row = reinterpret_cast<unsigned short *>(view.Pixels + y * view.Pitch);
+			for (int x = area.X; x < area.X + area.Width; ++x) {
+				RGBClass old = Deconstruct_Hicolor_Pixel(row[x]);
+				row[x] = Build_Hicolor_Pixel((old.Get_Red() * (100 - weight) + color.Get_Red() * weight) / 100, (old.Get_Green() * (100 - weight) + color.Get_Green() * weight) / 100, (old.Get_Blue() * (100 - weight) + color.Get_Blue() * weight) / 100);
+			}
+		}
+		if (IsPrimary) Video_Mark_Dirty();
+		return true;
+	}
 	//assert(xcliprect.Is_Valid());
 
 	if (Bytes_Per_Pixel() < 2) {
@@ -821,8 +848,61 @@ int DSurface::Get_Primary_Color_Mode(void)
 /// <param name="end_depth">Depth value at the end point.</param>
 /// <param name="write_depth">If true, the depth buffer is updated at each plotted pixel.</param>
 /// <returns>True if any portion of the line was drawn, false otherwise.</returns>
+template<class Painter>
+static bool Draw_Raster_Line(DSurface const & surface, Rect const & cliprect, Point2D const & first, Point2D const & last, bool antialias, Painter paint)
+{
+	int scale = surface.Get_Raster_Scale();
+	Rect clip = Render_Rect_To_Raster(surface, Intersect(surface.Get_Rect(), cliprect));
+	Point2D start = Render_Draw_Point(surface, Bias_To(first, cliprect));
+	Point2D end = Render_Draw_Point(surface, Bias_To(last, cliprect));
+	RasterSurfaceView raster(surface);
+	auto view = raster.View();
+	if (!clip.Is_Valid() || !view.Pixels) return false;
+	int dx = end.X - start.X, dy = end.Y - start.Y;
+	bool horizontal = abs(dx) >= abs(dy);
+	int length = horizontal ? abs(dx) : abs(dy);
+	for (int i = 0; i <= length; ++i) {
+		double t = length ? double(i) / length : 0;
+		double x = start.X + dx * t, y = start.Y + dy * t;
+		double minor = horizontal ? y : x;
+		int begin = antialias ? static_cast<int>(std::floor(minor - (scale - 1) * 0.5)) : static_cast<int>(std::round(minor)) - (scale - 1) / 2;
+		for (int band = begin; band < begin + scale + int(antialias); ++band) {
+			double coverage = antialias ? std::clamp((scale + 1) * 0.5 - std::abs(band - minor), 0.0, 1.0) : 1.0;
+			Point2D p(horizontal ? int(std::round(x)) : band, horizontal ? band : int(std::round(y)));
+			if (coverage > 0 && clip.Is_Point_Within(p)) {
+				auto pixel = reinterpret_cast<unsigned short *>(view.Pixels + p.Y * view.Pitch) + p.X;
+				paint(p, *pixel, t, coverage);
+			}
+		}
+	}
+	return true;
+}
+
+static unsigned short * Raster_Depth_Point(Point2D p, int scale)
+{
+	return DepthBuffer ? reinterpret_cast<unsigned short *>(DepthBuffer->Get_Raster_Offset(Point2D(p.X, p.Y - DepthBuffer->Bounds.Y * scale))) : nullptr;
+}
+
+static unsigned short Raster_Alpha_Value(Point2D p, int scale)
+{
+	return AlphaBuffer ? *reinterpret_cast<unsigned short *>(AlphaBuffer->Get_Raster_Offset(Point2D(p.X, p.Y - AlphaBuffer->Bounds.Y * scale))) : 127;
+}
+
+static unsigned short Raster_Line_Depth(Point2D p, int scale, int first, int last, double t)
+{
+	return static_cast<unsigned short>(int(first + (last - first) * t) + (DepthBuffer ? DepthBuffer->Get_Scroll_Delta(p.Y / scale - DepthBuffer->Bounds.Y) : 0));
+}
+
 bool DSurface::Draw_Depth_Glow_Line(Rect const & cliprect, Point2D const & startpoint, Point2D const & endpoint, int glow_strength, int start_depth, int end_depth, bool write_depth)
 {
+	if (RasterScale != 1) return Draw_Raster_Line(*this, cliprect, startpoint, endpoint, false, [&](Point2D p, unsigned short & pixel, double t, double) {
+		auto z = Raster_Depth_Point(p, RasterScale);
+		auto depth = Raster_Line_Depth(p, RasterScale, start_depth, end_depth, t);
+		if (!z || depth >= *z) return;
+		RGBClass old = Deconstruct_Hicolor_Pixel(pixel);
+		pixel = Build_Hicolor_Pixel(std::clamp(old.Get_Red() + ((glow_strength * old.Get_Red()) >> 8), 0, 255), std::clamp(old.Get_Green() + ((glow_strength * old.Get_Green()) >> 8), 0, 255), std::clamp(old.Get_Blue() + ((glow_strength * old.Get_Blue()) >> 8), 0, 255));
+		if (write_depth) *z = depth;
+	});
 	Point2D start;
 	Point2D end;
 
@@ -1136,6 +1216,18 @@ bool DSurface::Draw_Depth_Glow_Line(Rect const & cliprect, Point2D const & start
 /// <returns>bool; Was any part of the line drawn?</returns>
 bool DSurface::Draw_Depth_Antialiased_Line(Rect const & cliprect, Point2D const & startpoint, Point2D const & endpoint, RGBClass & color, int start_depth, int end_depth, bool write_depth, bool blend_red, bool blend_green, bool blend_blue, float intensity)
 {
+	if (RasterScale != 1) return Draw_Raster_Line(*this, cliprect, startpoint, endpoint, true, [&](Point2D p, unsigned short & pixel, double t, double coverage) {
+		auto z = Raster_Depth_Point(p, RasterScale);
+		auto depth = Raster_Line_Depth(p, RasterScale, start_depth, end_depth, t);
+		int alpha = Raster_Alpha_Value(p, RasterScale);
+		if (!z || depth >= *z || !alpha) return;
+		double weight = std::clamp(coverage * intensity, 0.0, 1.0);
+		weight = (std::pow(weight * 2 - 1, 3) + 1) * 0.5;
+		RGBClass old = Deconstruct_Hicolor_Pixel(pixel);
+		auto blend = [&](int before, int after, bool enabled) { return enabled ? std::clamp(int((before * (1 - weight) + after * weight) * alpha / 128), 0, 255) : before; };
+		pixel = Build_Hicolor_Pixel(blend(old.Get_Red(), color.Get_Red(), blend_red), blend(old.Get_Green(), color.Get_Green(), blend_green), blend(old.Get_Blue(), color.Get_Blue(), blend_blue));
+		if (write_depth) *z = depth;
+	});
 	static int GradientTable[257];
 	static bool onetime = false;
 
@@ -1754,6 +1846,15 @@ unsigned short DSurface::Blend_Pixel(unsigned short src_color, unsigned short ds
 /// <returns>bool; Was the line drawn?</returns>
 bool DSurface::Draw_Ping_Pong_Gradient_Line(Rect const & cliprect, Point2D const & startpoint, Point2D const & endpoint, RGBClass const & start_color, RGBClass const & end_color, float & gradient_step, float & gradient_position) const
 {
+	if (RasterScale != 1) {
+		int last_step = -1;
+		int length = std::max(abs(endpoint.X - startpoint.X), abs(endpoint.Y - startpoint.Y));
+		return Draw_Raster_Line(*this, cliprect, startpoint, endpoint, false, [&](Point2D, unsigned short & pixel, double t, double) {
+			int step = int(t * length);
+			while (last_step < step) { gradient_position += gradient_step; if (gradient_position < 0 || gradient_position > 1) { gradient_step = -gradient_step; gradient_position = std::clamp(gradient_position, 0.0f, 1.0f); } ++last_step; }
+			pixel = Build_Hicolor_Pixel(int(start_color.Get_Red() + (end_color.Get_Red() - start_color.Get_Red()) * gradient_position), int(start_color.Get_Green() + (end_color.Get_Green() - start_color.Get_Green()) * gradient_position), int(start_color.Get_Blue() + (end_color.Get_Blue() - start_color.Get_Blue()) * gradient_position));
+		});
+	}
 	//assert(xcliprect.Is_Valid());
 
 	/*
@@ -1936,6 +2037,15 @@ bool DSurface::Draw_Ping_Pong_Gradient_Line(Rect const & cliprect, Point2D const
 /// <returns>True if any portion of the line was drawn, false otherwise.</returns>
 bool DSurface::Draw_Depth_Shaded_Line(Rect const & cliprect, Point2D const & startpoint, Point2D const & endpoint, unsigned color, int start_depth, int end_depth, bool write_depth)
 {
+	if (RasterScale != 1) return Draw_Raster_Line(*this, cliprect, startpoint, endpoint, false, [&](Point2D p, unsigned short & pixel, double t, double) {
+		auto z = Raster_Depth_Point(p, RasterScale);
+		auto depth = Raster_Line_Depth(p, RasterScale, start_depth, end_depth, t);
+		int alpha = Raster_Alpha_Value(p, RasterScale);
+		if (!z || depth >= *z || !alpha) return;
+		RGBClass rgb = Deconstruct_Hicolor_Pixel(static_cast<unsigned short>(color));
+		pixel = alpha == 127 ? static_cast<unsigned short>(color) : Build_Hicolor_Pixel((rgb.Get_Red() * alpha) >> 7, (rgb.Get_Green() * alpha) >> 7, (rgb.Get_Blue() * alpha) >> 7);
+		if (write_depth) *z = depth;
+	});
 	/*
 	**	Ensure that the clipping rectangle is legal.
 	*/
@@ -2274,6 +2384,13 @@ bool DSurface::Draw_Depth_Shaded_Line(Rect const & cliprect, Point2D const & sta
 /// <remarks>The line is not clipped -- the caller must clip it to the surface first.</remarks>
 int DSurface::Draw_Masked_Dashed_Line(Point2D const & startpoint, Point2D const & endpoint, unsigned color, bool pattern[], int offset, bool draw_on_zero_alpha)
 {
+	if (RasterScale != 1) {
+		int length = std::max(abs(endpoint.X - startpoint.X), abs(endpoint.Y - startpoint.Y));
+		Draw_Raster_Line(*this, Get_Rect(), startpoint, endpoint, false, [&](Point2D p, unsigned short & pixel, double t, double) {
+			if (pattern[(offset + int(t * length)) & 15] && ((Raster_Alpha_Value(p, RasterScale) == 0) == draw_on_zero_alpha)) pixel = static_cast<unsigned short>(color);
+		});
+		return (offset + length + 1) & 15;
+	}
 	/*
 	**	High-speed working variables for the clipping rectangle and clipping operation.
 	*/
@@ -2633,6 +2750,9 @@ int DSurface::Draw_Masked_Dashed_Line(Point2D const & startpoint, Point2D const 
 /// <returns>bool; Was the line drawn?</returns>
 bool DSurface::Draw_Masked_Line(Point2D const & startpoint, Point2D const & endpoint, unsigned color, bool draw_on_zero_alpha)
 {
+	if (RasterScale != 1) return Draw_Raster_Line(*this, Get_Rect(), startpoint, endpoint, false, [&](Point2D p, unsigned short & pixel, double, double) {
+		if ((Raster_Alpha_Value(p, RasterScale) == 0) == draw_on_zero_alpha) pixel = static_cast<unsigned short>(color);
+	});
 	if (Bytes_Per_Pixel() == 2) {
 		/*
 		**	Ensure that the clipping rectangle is legal.

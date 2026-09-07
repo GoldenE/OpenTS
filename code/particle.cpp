@@ -46,6 +46,7 @@
 #include "unit.h"
 #include "wave.h"
 #include "zbuffer.h"
+#include "rendercontext.hh"
 
 #include "draw.hh"
 
@@ -659,6 +660,26 @@ void ParticleClass::Behavior_AI(void)
 /// </summary>
 /// <param name="point">The screen position to draw the particle at.</param>
 /// <param name="cliprect">The clipping rectangle to draw within.</param>
+static void Draw_Particle_Raster(Surface & surface, Point2D const & point, Rect const & cliprect, int depth, RGBClass const & color)
+{
+	int const density = surface.Get_Raster_Scale();
+	Point2D const origin = Render_Draw_Point(surface, point);
+	Rect const clipped = Intersect(Rect(origin, density, density), Render_Rect_To_Raster(surface, Intersect(cliprect, surface.Get_Rect())));
+	if (!clipped.Is_Valid()) return;
+	RasterSurfaceView output(surface);
+	auto const raster = output.View();
+	if (!raster.Pixels) return;
+	for (int y = clipped.Y; y < clipped.Y + clipped.Height; ++y) for (int x = clipped.X; x < clipped.X + clipped.Width; ++x) {
+		int const alpha = *reinterpret_cast<unsigned short const *>(AlphaBuffer->Get_Raster_Offset(Point2D(x, y - AlphaBuffer->Bounds.Y * density)));
+		int const sample_depth = *reinterpret_cast<unsigned short const *>(DepthBuffer->Get_Raster_Offset(Point2D(x, y - DepthBuffer->Bounds.Y * density)));
+		if (!alpha || depth >= sample_depth) continue;
+		int red = color.Get_Red(), green = color.Get_Green(), blue = color.Get_Blue();
+		if (alpha < 127) { red = (red * alpha) >> 7; green = (green * alpha) >> 7; blue = (blue * alpha) >> 7; }
+		*(reinterpret_cast<unsigned short *>(raster.Pixels + y * raster.Pitch) + x) = DSurface::Build_Hicolor_Pixel(red, green, blue);
+	}
+}
+
+
 void ParticleClass::Draw_It(Point2D const & point, Rect const & cliprect) const
 {
 	if (Options.DetailLevel != 0 || Class->BehavesLike != BEHAVIOR_SMOKE && Class->BehavesLike != BEHAVIOR_SPARK) {
@@ -686,6 +707,15 @@ void ParticleClass::Draw_It(Point2D const & point, Rect const & cliprect) const
 				TacticalMap->Coord_To_Pixel(PositionCoord, pixel);
 				pixel.Y += TacticalRect.Y;
 				if (cliprect.Is_Point_Within(pixel)) {
+					if (LogicalSurface->Get_Raster_Scale() > 1) {
+						RGBClass const first = ColorIndex == 0 ? Color : Class->ColorList[ColorIndex];
+						RGBClass const second = Class->ColorList[ColorIndex + 1];
+						RGBClass const color(static_cast<unsigned char>(first.Get_Red() * (1.0 - ColorAccum) + second.Get_Red() * ColorAccum),
+							static_cast<unsigned char>(first.Get_Green() * (1.0 - ColorAccum) + second.Get_Green() * ColorAccum), static_cast<unsigned char>(first.Get_Blue() * (1.0 - ColorAccum) + second.Get_Blue() * ColorAccum));
+						int const depth = static_cast<unsigned short>(DepthBuffer->Bounds.Y + DepthBuffer->Get_Scroll_Delta(pixel.Y)) - TacticalMap->Z_Lepton_To_Pixel(PositionCoord.Z) - 50;
+						Draw_Particle_Raster(*LogicalSurface, pixel, cliprect, depth, color);
+						return;
+					}
 					Point2D alpha_point = pixel - Point2D(0, AlphaBuffer->Get_Bounds().Y);
 					int alpha = *(unsigned short*)AlphaBuffer->Get_Buffer_Offset(alpha_point);
 					if (alpha != 0) {

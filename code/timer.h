@@ -52,6 +52,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 
 /*
 **	This is a timer class that watches a constant rate timer (specified by the parameter
@@ -444,6 +446,8 @@ class CDTimerClass : public BasicTimerClass<T> {
 
 		// Fetches current value of count down timer.
 		int Value(void) const;
+		int Fetch_Interval(void) const {return(DelayTime);}
+		std::int64_t Fetch_Elapsed(void) const {return(Started == -1 ? 0 : std::int64_t(Timer()) - Started);}
 
 		// Conversion operator to allow consistent treatment with integral types.
 		operator int(void) const;

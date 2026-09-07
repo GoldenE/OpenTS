@@ -260,6 +260,20 @@ void AlphaShapeClass::Draw_In_Area(Point2D const & point, Rect const & cliprect)
 
 				const unsigned char * maskptr = &_tilemask[ISO_TILE_PIXEL_W * dy + dx];
 				unsigned char * shapedata = (unsigned char *)shape->Get_Data(0);
+				int const density = AlphaBuffer->Get_Raster_Scale();
+				if (density > 1) {
+					for (int row = top; row < bottom; ++row) {
+						for (int col = left; col < right; ++col) {
+							if (_tilemask[(row - point.Y) * ISO_TILE_PIXEL_W + col - point.X] == '\x20') continue;
+							unsigned char const pixel = shapedata[(src_y + row - top) * shape_rect.Width + src_x + col - left];
+							for (int ry = 0; ry < density; ++ry) for (int rx = 0; rx < density; ++rx) {
+								auto * alpha = reinterpret_cast<unsigned short *>(AlphaBuffer->Get_Raster_Offset(Point2D(col * density + rx, (row - TacticalRect.Y) * density + ry)));
+								*alpha = BrightnessTable[pixel][*alpha];
+							}
+						}
+					}
+					continue;
+				}
 
 				unsigned short * alphaptr = (unsigned short *)AlphaBuffer->Get_Buffer_Offset(Point2D(left, top - TacticalRect.Y));
 				unsigned char * shapeptr = (unsigned char *)&shapedata[src_x + src_y * shape_rect.Width];
@@ -339,6 +353,17 @@ void AlphaShapeClass::Draw_All(Rect const & cliprect)
 
 				unsigned char * shapedata = (unsigned char *)shape->Get_Data(0);
 
+				int const density = AlphaBuffer->Get_Raster_Scale();
+				if (density > 1) {
+					for (int row = top; row < bottom; ++row) for (int col = left; col < right; ++col) {
+						unsigned char const pixel = shapedata[(src_y + row - top) * shape_rect.Width + src_x + col - left];
+						for (int ry = 0; ry < density; ++ry) for (int rx = 0; rx < density; ++rx) {
+							auto * alpha = reinterpret_cast<unsigned short *>(AlphaBuffer->Get_Raster_Offset(Point2D((col - TacticalRect.X) * density + rx, (row - TacticalRect.Y) * density + ry)));
+							*alpha = BrightnessTable[pixel][*alpha];
+						}
+					}
+					continue;
+				}
 				unsigned short * alphaptr = (unsigned short *)AlphaBuffer->Get_Buffer_Offset(Point2D(left - TacticalRect.X, top - TacticalRect.Y));
 
 				unsigned char * shapeptr = (unsigned char *)&shapedata[src_x + src_y * shape_rect.Width];

@@ -50,6 +50,9 @@ namespace VoxelDrawSystem
 
 	unsigned char * Get_Surface_Buffer(void);
 	Surface * Get_Surface(void);
+	int Raster_Density();
+	unsigned char * Raster_Buffer();
+	unsigned char * Raster_Depth_Buffer();
 
 	void Precalculate_Light(VoxelLibrary * voxlib, int layer, int info, const Matrix3D & light_transform, Vector3 const & light);
 	void Precalculate_Light(VoxelLibrary * voxlib, int layer, int info, const Matrix3D & light_transform, Matrix3D const & view_transform, Vector3 const & light, float specular_strength);

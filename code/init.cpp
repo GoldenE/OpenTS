@@ -55,6 +55,7 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "always.h"
+#include "hdruntime.hh"
 
 #include "architecture.hh"
 
@@ -2741,6 +2742,7 @@ static bool Bootstrap(void)
 	 * House specific scheme palette initialization.
 	 */
 	memmove((unsigned char *)&SchemePalette[0], (void *)MFCD::Retrieve("UNITSNO.PAL"), sizeof(SchemePalette));
+	HDAsset::Alias(MFCD::Retrieve("UNITSNO.PAL"), &SchemePalette);
 
 	for (index = 0; index < 256; index++) {
 		SchemePalette[index] = RGBClass(
@@ -2753,6 +2755,7 @@ static bool Bootstrap(void)
 	**	Default palette initialization.
 	*/
 	memmove((unsigned char *)&GamePalette[0], (void *)MFCD::Retrieve("TEMPERAT.PAL"), sizeof(GamePalette));
+	HDAsset::Alias(MFCD::Retrieve("TEMPERAT.PAL"), &GamePalette);
 
 	for (index = 0; index < 256; index++) {
 		GamePalette[index] = RGBClass(
@@ -2763,9 +2766,12 @@ static bool Bootstrap(void)
 
 	OriginalPalette = GamePalette;
 	CCPalette = GamePalette;
+	HDAsset::Alias(&GamePalette, &OriginalPalette);
+	HDAsset::Alias(&GamePalette, &CCPalette);
 	WhitePalette[0] = BlackPalette[0];
 
 	memmove((unsigned char *)&WaypointPalette[0], (void *)MFCD::Retrieve("WAYPOINT.PAL"), sizeof(WaypointPalette));
+	HDAsset::Alias(MFCD::Retrieve("WAYPOINT.PAL"), &WaypointPalette);
 
 	for (index = 0; index < 256; index++) {
 		WaypointPalette[index] = RGBClass(
@@ -2799,8 +2805,10 @@ static bool Bootstrap(void)
 	TerrainDrawer = new ConvertClass(GamePalette, GamePalette, *VisibleSurface, NUM_INTENSITY_LEVELS);
 
 	PaletteClass pal;
+	HDAsset::ScopedOwner palette_owner(&pal);
 
 	memmove((unsigned char *)&pal[0], (void *)MFCD::Retrieve("ANIM.PAL"), sizeof(pal));
+	HDAsset::Alias(MFCD::Retrieve("ANIM.PAL"), &pal);
 	for (index = 0; index < 256; index++) {
 		pal[index] = RGBClass(
 				(unsigned char)(pal[index].Get_Red()<<2),
@@ -2811,6 +2819,7 @@ static bool Bootstrap(void)
 	AnimDrawer = new ConvertClass(pal, GamePalette, *VisibleSurface, NUM_INTENSITY_LEVELS);
 
 	memmove((unsigned char *)&pal[0], (void *)MFCD::Retrieve("PALETTE.PAL"), sizeof(pal));
+	HDAsset::Alias(MFCD::Retrieve("PALETTE.PAL"), &pal);
 	for (index = 0; index < 256; index++) {
 		pal[index] = RGBClass(
 				(unsigned char)(pal[index].Get_Red()<<2),
@@ -2821,6 +2830,7 @@ static bool Bootstrap(void)
 	NormalDrawer = new ConvertClass(pal, GamePalette, *VisibleSurface, NUM_INTENSITY_LEVELS);
 
 	memmove((unsigned char *)&pal[0], (void *)MFCD::Retrieve("UNITSNO.PAL"), sizeof(pal));
+	HDAsset::Alias(MFCD::Retrieve("UNITSNO.PAL"), &pal);
 	for (index = 0; index < 256; index++) {
 		pal[index] = RGBClass(
 				(unsigned char)(pal[index].Get_Red()<<2),
@@ -2831,6 +2841,7 @@ static bool Bootstrap(void)
 	VoxelDrawer = new ConvertClass(pal, GamePalette, *VisibleSurface, NUM_INTENSITY_LEVELS);
 
 	memmove((unsigned char *)&pal[0], (void *)MFCD::Retrieve("CAMEO.PAL"), sizeof(pal));
+	HDAsset::Alias(MFCD::Retrieve("CAMEO.PAL"), &pal);
 	for (index = 0; index < 256; index++) {
 		pal[index] = RGBClass(
 				(unsigned char)(pal[index].Get_Red()<<2),
@@ -2840,6 +2851,7 @@ static bool Bootstrap(void)
 	CameoDrawer = new ConvertClass(pal, GamePalette, *VisibleSurface, NUM_INTENSITY_LEVELS);
 
 	memmove((unsigned char *)&pal[0], (void *)MFCD::Retrieve("MOUSEPAL.PAL"), sizeof(pal));
+	HDAsset::Alias(MFCD::Retrieve("MOUSEPAL.PAL"), &pal);
 	for (index = 0; index < 256; index++) {
 		pal[index] = RGBClass(
 				(unsigned char)(pal[index].Get_Red()<<2),
@@ -5286,7 +5298,7 @@ bool Allocate_Surfaces(const Rect & hidden_rect, const Rect & composite_rect, co
 	}
 
 	if (hidden_first && hidden_rect.Is_Valid()) {
-		HiddenSurface = new DSurface(hidden_rect.Width, hidden_rect.Height);
+		HiddenSurface = new DSurface(hidden_rect.Width, hidden_rect.Height, RenderDomain::UI);
 		assert(HiddenSurface != NULL);
 		HiddenSurface->Fill(0);
 
@@ -5294,35 +5306,35 @@ bool Allocate_Surfaces(const Rect & hidden_rect, const Rect & composite_rect, co
 	}
 
 	if (composite_rect.Is_Valid()) {
-		CompositeSurface = new DSurface(composite_rect.Width, composite_rect.Height);
+		CompositeSurface = new DSurface(composite_rect.Width, composite_rect.Height, RenderDomain::World);
 		CompositeSurface->Fill(0);
 
 		DebugString("CompositeSurface (%dx%d)\n", composite_rect.Width, composite_rect.Height);
 	}
 
 	if (tile_rect.Is_Valid()) {
-		TileSurface = new DSurface(tile_rect.Width, tile_rect.Height);
+		TileSurface = new DSurface(tile_rect.Width, tile_rect.Height, RenderDomain::World);
 		TileSurface->Fill(0);
 
 		DebugString("TileSurface (%dx%d)\n", tile_rect.Width, tile_rect.Height);
 	}
 
 	if (sidebar_rect.Is_Valid()) {
-		SidebarSurface = new DSurface(sidebar_rect.Width, sidebar_rect.Height);
+		SidebarSurface = new DSurface(sidebar_rect.Width, sidebar_rect.Height, RenderDomain::UI);
 		SidebarSurface->Fill(0);
 
 		DebugString("SidebarSurface (%dx%d)\n", sidebar_rect.Width, sidebar_rect.Height);
 	}
 
 	if (!hidden_first && hidden_rect.Is_Valid()) {
-		HiddenSurface = new DSurface(hidden_rect.Width, hidden_rect.Height);
+		HiddenSurface = new DSurface(hidden_rect.Width, hidden_rect.Height, RenderDomain::UI);
 		HiddenSurface->Fill(0);
 
 		DebugString("HiddenSurface (%dx%d)\n", hidden_rect.Width, hidden_rect.Height);
 	}
 
 	if (hidden_rect.Is_Valid()) {
-		AlternateSurface = new DSurface(hidden_rect.Width, hidden_rect.Height);
+		AlternateSurface = new DSurface(hidden_rect.Width, hidden_rect.Height, RenderDomain::UI);
 		assert(AlternateSurface != NULL);
 		AlternateSurface->Fill(0);
 
@@ -5561,6 +5573,7 @@ void Init_Theater(TheaterType theater)
 		wsprintf(fullname, "%s.PAL", Theaters[theater].Root);
 
 		unsigned char * ptr = (unsigned char *)MFCD::Retrieve(fullname);
+		HDAsset::Alias(ptr, &GamePalette);
 
 		assert(ptr != NULL);
 		if (ptr != NULL) {
@@ -5577,6 +5590,7 @@ void Init_Theater(TheaterType theater)
 		}
 
 		OriginalPalette = GamePalette;
+		HDAsset::Alias(&GamePalette, &OriginalPalette);
 
 		PaletteClass * unitpal = NULL;
 		char const * palname = NULL;
@@ -5601,6 +5615,7 @@ void Init_Theater(TheaterType theater)
 
 		if (unitpal != NULL) {
 			SchemePalette = *unitpal;
+			HDAsset::Alias(unitpal, &SchemePalette);
 		}
 
 		for (int index = 0; index < 256; index++) {

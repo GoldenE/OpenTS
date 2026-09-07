@@ -15,11 +15,49 @@
 #include "matrix3d.h"
 #include "objtype.h"
 #include "quat.h"
+#include "rendercontext.hh"
+#include "renderworld.hh"
 
 #include "ramp.hh"
 
 /// warning C4305: 'argument' : truncation from 'const double' to 'float'
 #pragma warning(disable : 4305)
+
+int Render_Voxel_Facing_Count()
+{
+	return Get_Render_Settings().Mode == RenderMode::Classic ? 32 : 128;
+}
+
+
+int Render_Voxel_Facing(DirType const & direction)
+{
+	unsigned const count = Render_Voxel_Facing_Count();
+	return ((static_cast<unsigned short>(direction.As_Int()) * count + 32768u) >> 16) % count;
+}
+
+
+double Render_Voxel_Radians(DirType const & direction)
+{
+	int const count = Render_Voxel_Facing_Count();
+	return (Render_Voxel_Facing(direction) - count / 4) * -DEG_TO_RAD(360.0 / count);
+}
+
+
+int Render_Voxel_Key(int prefix, int value, int count)
+{
+	if (prefix < 0 || value < 0 || value >= count || count <= 0 || prefix > (INT_MAX - value) / count) return -1;
+	return prefix * count + value;
+}
+
+
+TerrainRasterSpan Render_Terrain_Span(int row, int density)
+{
+	if (density < 1 || density > 4 || row < 0 || row >= 23 * density) return {0, 0, 0};
+	int const logical = row / density;
+	int const half = logical < 12 ? logical : 22 - logical;
+	int const source = logical < 12 ? 2 * logical * (logical + 1) : 576 - 2 * (23 - logical) * (24 - logical);
+	return {(22 - 2 * half) * density, (4 + 4 * half) * density, source};
+}
 
 /*
  * These are the orientations a voxel takes on when it stands on each kind of ramp -- the

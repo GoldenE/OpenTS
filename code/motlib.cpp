@@ -8,6 +8,7 @@
  ******************************************************************************/
 
 #include "always.h"
+#include "hdruntime.hh"
 
 #include "motlib.h"
 
@@ -105,6 +106,7 @@ BOOL MotionLibrary::Read_File(FileClass & file)
 		}
 	}
 
+	HDAsset::Register_Stream(file, this);
 	file.Close();
 	return(true);
 }
@@ -135,6 +137,7 @@ void MotionLibrary::Scale(float scale)
 /// </summary>
 void MotionLibrary::Clear()
 {
+	HDAsset::Forget(this);
 	if (LayerMatrices != NULL) {
 		delete [] LayerMatrices;
 	}

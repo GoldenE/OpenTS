@@ -43,6 +43,8 @@
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #include "always.h"
+#include "rendercontext.hh"
+#include "renderstage.hh"
 
 #include "gscreen.h"
 
@@ -55,9 +57,14 @@
 #include "_tooltip.h"
 #include "_xmouse.h"
 #include "bench.h"
+#include "building.h"
+#include "builtype.h"
+#include "hdruntime.hh"
+#include "shapeset.h"
 #include "cctooltip.h"
 #include "gadget.h"
 #include "goptions.h"
+#include "globals.h"
 #include "interp.h"
 #include "keyboard.h"
 #include "logic.h"
@@ -385,7 +392,41 @@ void GScreenClass::Remove_A_Button(GadgetClass & gadget)
  *=============================================================================================*/
 void GScreenClass::Render(void)
 {
+	ScopedScreenSpace screen_space;
+	ScopedRenderAnimation animation({});
 	Render_Frame_Begin();
+	ScopedRenderAnimationOwners animation_owners;
+	if (Get_Render_Settings().Mode == RenderMode::HD) {
+		for (int index = 0; index < Buildings.Count(); ++index) {
+			BuildingClass * building = Buildings[index];
+			if (building->IsActive && building->IsDown && !building->IsFogged && !building->IsInLimbo) {
+				auto shape = static_cast<ShapeSet const *>(building->Get_Image_Data());
+				auto pack = HDAsset::Fetch(shape);
+				if (shape && pack) {
+					auto variant = HDAsset::Select_Variant(*pack, Render_Art_Scale(RenderDomain::World));
+					if (variant && variant->LogicalWidth == static_cast<unsigned>(shape->Get_Width()) && variant->LogicalHeight == static_cast<unsigned>(shape->Get_Height()) && variant->LogicalFrames == static_cast<unsigned>(shape->Get_Count())) {
+						int logical_frame = building->Shape_Number();
+						for (auto const & sequence : variant->Sequences) {
+							if (sequence.Temporal <= 1 || logical_frame < 0 || static_cast<unsigned>(logical_frame) < sequence.First || static_cast<unsigned>(logical_frame) - sequence.First >= sequence.Count) continue;
+							auto progress = building->Fetch_Render_Progress(Options.SmoothMotion ? Fetch_Render_Alpha() : 0);
+							auto frame = HDAsset::Select_Animated_Frame(*variant, logical_frame, progress.Direction, progress.Fraction, building->PrimaryFacing.Current().As_Dir256());
+							if (Render_Cached_Animation_Changed(building, frame)) {
+								Rect area = building->Get_Render_Rect();
+								// Wipe_Depth shifts queued areas from the previous view into the current one.
+								area -= Point2D(TacticalMap->LastTacPixelX - TacticalMap->TacPixelX, TacticalMap->LastTacPixelY - TacticalMap->TacPixelY);
+								TacticalMap->Register_Dirty_Area(Rect(area.X - 1, area.Y - 1, area.Width + 2, area.Height + 2));
+							}
+							break;
+						}
+					}
+				}
+			}
+			if (building->Anims[BANIM_TURRET] != nullptr && (building->Is_Turret_Equipped() || building->Class->IsHasChargeAnim)) {
+				auto progress = building->Class->IsHasChargeAnim ? building->BuildingStage.Fetch_Render_Progress(Options.SmoothMotion ? Fetch_Render_Alpha() : 0) : RenderStageProgress{};
+				Bind_Render_Animation_Owner(building->Anims[BANIM_TURRET], progress, building->PrimaryFacing.Current().As_Dir256());
+			}
+		}
+	}
 	BStart(BENCH_GSCREEN_RENDER);
 
 	RenderFramesThisSecond++;

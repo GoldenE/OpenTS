@@ -12,6 +12,7 @@
  ******************************************************************************/
 
 #include "always.h"
+#include "rastercache.hh"
 
 #include "srfcache.h"
 
@@ -19,6 +20,8 @@
 #include "dsurface.h"
 #include "ownrdraw.h"
 #include "pcx.h"
+#include "rendercontext.hh"
+#include <memory>
 
 #include <algorithm>
 #include <new>
@@ -430,6 +433,27 @@ Surface * SurfaceCacheClass::GetSurface(char const * name, void * palette)
 /// <returns>True on success, false if a surface lock failed.</returns>
 bool SurfaceCacheClass::Draw(Rect const & rect, Surface & tosurface, Surface & fromsurface, int x, int y)
 {
+	if (tosurface.Get_Raster_Scale() != 1 || fromsurface.Get_Raster_Scale() != 1) {
+		RasterSurfaceView output(tosurface), input(fromsurface);
+		auto dest = output.View();
+		auto source = input.View();
+		if (!dest.Pixels || !source.Pixels || dest.BytesPerPixel != 2 || source.BytesPerPixel != 2) return false;
+		int density = tosurface.Get_Raster_Scale();
+		Rect target = Render_Rect_To_Raster(tosurface, Intersect(rect, tosurface.Get_Rect()));
+		int source_scale = fromsurface.Get_Raster_Scale();
+		int ox = std::max(0, (fromsurface.Get_Width() - rect.Width) / 2) + x;
+		int oy = std::max(0, (fromsurface.Get_Height() - rect.Height) / 2) + y;
+		for (int py = target.Y; py < target.Y + target.Height; ++py) {
+			int sy = ((oy * density + py - rect.Y * density) * source_scale / density % source.Height + source.Height) % source.Height;
+			auto row = reinterpret_cast<unsigned short *>(dest.Pixels + py * dest.Pitch);
+			auto src = reinterpret_cast<unsigned short const *>(source.Pixels + sy * source.Pitch);
+			for (int px = target.X; px < target.X + target.Width; ++px) {
+				int sx = ((ox * density + px - rect.X * density) * source_scale / density % source.Width + source.Width) % source.Width;
+				row[px] = src[sx];
+			}
+		}
+		return true;
+	}
 	unsigned short *tbuf = (unsigned short *)tosurface.Lock();
 	if (tbuf == NULL) {
 		return(false);
@@ -476,6 +500,24 @@ bool SurfaceCacheClass::Draw(Rect const & rect, Surface & tosurface, Surface & f
 /// <returns>Always true.</returns>
 bool SurfaceCacheClass::DrawTrans(Rect const & rect, Surface & tosurface, Surface & fromsurface, short trans)
 {
+	if (tosurface.Get_Raster_Scale() != 1 || fromsurface.Get_Raster_Scale() != 1) {
+		RasterSurfaceView output(tosurface), input(fromsurface);
+		auto dest = output.View();
+		auto source = input.View();
+		if (!dest.Pixels || !source.Pixels || dest.BytesPerPixel != 2 || source.BytesPerPixel != 2) return false;
+		int density = tosurface.Get_Raster_Scale();
+		int source_scale = fromsurface.Get_Raster_Scale();
+		Rect target = Intersect(Rect(rect.X * density, rect.Y * density, fromsurface.Get_Width() * density, fromsurface.Get_Height() * density), output.Get_Rect());
+		for (int py = target.Y; py < target.Y + target.Height; ++py) {
+			auto row = reinterpret_cast<unsigned short *>(dest.Pixels + py * dest.Pitch);
+			auto src = reinterpret_cast<unsigned short const *>(source.Pixels + ((py - rect.Y * density) * source_scale / density) * source.Pitch);
+			for (int px = target.X; px < target.X + target.Width; ++px) {
+				auto pixel = src[(px - rect.X * density) * source_scale / density];
+				if (pixel != static_cast<unsigned short>(trans)) row[px] = pixel;
+			}
+		}
+		return true;
+	}
 	unsigned short *tbuf = (unsigned short *)tosurface.Lock();
 	unsigned short *fbuf = (unsigned short *)fromsurface.Lock();
 	Rect r = rect;
@@ -548,6 +590,25 @@ bool SurfaceCacheClass::DrawNullsub(Rect const & rect, Surface & tosurface, Surf
 /// <returns>True on success, false if a surface lock failed.</returns>
 bool SurfaceCacheClass::DrawMasked(Rect const & rect, Surface & tosurface, Surface & fromsurface, Surface & masksurface, void * palette, bool center, int x_offset, int y_offset)
 {
+	if (tosurface.Get_Raster_Scale() != 1 || fromsurface.Get_Raster_Scale() != 1 || masksurface.Get_Raster_Scale() != 1) {
+		int density = tosurface.Get_Raster_Scale();
+		std::optional<RasterSurfaceLease> scaled_image;
+		std::optional<RasterSurfaceLease> scaled_mask;
+		Surface * source = &fromsurface;
+		Surface * mask = &masksurface;
+		if (source->Get_Raster_Scale() != density) {
+			scaled_image.emplace(source->Get_Width(), source->Get_Height(), source->Bytes_Per_Pixel(), density);
+			if (!scaled_image->Get().Blit_From(*source)) return false;
+			source = &scaled_image->Get();
+		}
+		if (mask->Get_Raster_Scale() != density) {
+			scaled_mask.emplace(mask->Get_Width(), mask->Get_Height(), mask->Bytes_Per_Pixel(), density);
+			if (!scaled_mask->Get().Blit_From(*mask)) return false;
+			mask = &scaled_mask->Get();
+		}
+		RasterSurfaceView output(tosurface), image(*source), alpha(*mask);
+		return DrawMasked(Render_Rect_To_Raster(tosurface, rect), output, image, alpha, palette, center, x_offset * density, y_offset * density);
+	}
 	unsigned short pal16[256];
 
 	Rect image_rect = fromsurface.Get_Rect();

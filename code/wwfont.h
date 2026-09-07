@@ -46,14 +46,9 @@ class WWFontClass : public FontClass
 
 	public:
 		WWFontClass(void const * fontdata, bool isoutlined=false, int shadow=0);
-		virtual ~WWFontClass(void) override {}
+		virtual ~WWFontClass(void) override;
 
-		void *Set_Font_Data(void const * fontdata)
-		{
-			void *old = (void *) FontData;
-			FontData = (FontType *)fontdata;
-			return(old);
-		}
+		void *Set_Font_Data(void const * fontdata);
 
 		void *Get_Font_Data(void)  {
 			return((void *)FontData);

@@ -8,6 +8,7 @@
  ******************************************************************************/
 
 #include "always.h"
+#include "hdruntime.hh"
 
 #include "voxlib.h"
 #include "wwfile.h"
@@ -50,6 +51,7 @@ VoxelPaletteLibrary::VoxelPaletteLibrary(RGBStruct * rgb, void * lut)
 /// </summary>
 VoxelPaletteLibrary::~VoxelPaletteLibrary(void)
 {
+	HDAsset::Forget(this);
 	if (ColorsAllocated) {
 		delete [] Colors;
 	}
@@ -67,6 +69,7 @@ VoxelPaletteLibrary::~VoxelPaletteLibrary(void)
 /// <returns>Returns with zero if the palette was read, or one if it could not be.</returns>
 int VoxelPaletteLibrary::Read_Colors(FileClass & file)
 {
+	HDAsset::Forget(this);
 	int result = 0;
 
 	file.Open(FileClass::READ);
@@ -74,6 +77,7 @@ int VoxelPaletteLibrary::Read_Colors(FileClass & file)
 		result = 1;
 	}
 
+	if (result == 0) HDAsset::Register_Stream(file, this);
 	file.Close();
 
 	return(result);
@@ -88,6 +92,7 @@ int VoxelPaletteLibrary::Read_Colors(FileClass & file)
 /// <returns>Returns with zero if the library was read, or one if it could not be.</returns>
 int VoxelPaletteLibrary::Read_File(FileClass & file)
 {
+	HDAsset::Forget(this);
 	VPLHeaderStruct hdr;
 	int result = 0;
 
@@ -120,6 +125,7 @@ int VoxelPaletteLibrary::Read_File(FileClass & file)
 		}
 	}
 
+	if (result == 0) HDAsset::Register_Stream(file, this);
 	file.Close();
 
 	return(result);

@@ -401,7 +401,7 @@ class BuildingClass : public TechnoClass
 		SuperWeaponType Fetch_Super_Weapon(void) const;
 		SuperWeaponType Fetch_Super_Weapon2(void) const;
 		bool Should_Fog(void) const;
-		Matrix3D Get_Barrel_Matrix(void) const;
+		Matrix3D Get_Barrel_Matrix(bool render = false) const;
 
 		/*
 		**	Coordinate inquiry functions. These are used for both display and

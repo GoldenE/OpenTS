@@ -13,9 +13,15 @@
 
 #include "voxdrsys.h"
 #include "wwfile.h"
+#include "ccfile.h"
+#include "hdruntime.hh"
+#include "ramfile.h"
+#include "rendercontext.hh"
 
 #include <algorithm>
 #include <climits>
+#include <memory>
+#include <vector>
 
 
 short VoxelPixelDeltaTable[VOXEL_BITMAP_WIDTH][2];
@@ -528,6 +534,7 @@ VoxelLibrary::~VoxelLibrary(void)
 /// </summary>
 void VoxelLibrary::Clear(void)
 {
+	HDAsset::Forget(this);
 	if (LayerHeaders != NULL) {
 		delete [] LayerHeaders;
 	}
@@ -563,6 +570,18 @@ int VoxelLibrary::Read_File(FileClass & file, int load_file_palette)
 
 	if (!file.Open(FileClass::READ)) {
 		return(false);
+	}
+	if (HDAsset::Enabled()) {
+		auto * source = dynamic_cast<CCFileClass *>(&file);
+		int const size = file.Size();
+		if (source && size > 0 && size <= 256 * 1024 * 1024) {
+			std::vector<unsigned char> bytes(size);
+			if (file.Read(bytes.data(), size) == size) {
+				source->Register_HD_Data(bytes.data(), size);
+				HDAsset::Rebind(bytes.data(), this);
+			}
+			file.Seek(0, SEEK_SET);
+		}
 	}
 
 	VoxelHeaderStruct hdr;
@@ -697,6 +716,60 @@ int VoxelLibrary::Read_File(FileClass & file, int load_file_palette)
 }
 
 
+VoxelLibrary * VoxelLibrary::Render_Variant()
+{
+	struct Entry {
+		std::shared_ptr<HDAsset::Pack const> Pack;
+		HDAsset::Variant const * Variant;
+		std::unique_ptr<VoxelLibrary> Library;
+	};
+	static std::vector<Entry> entries;
+	static std::size_t bytes = 0;
+	static std::uint64_t generation = 0;
+	static std::uint64_t asset_generation = 0;
+	if (generation != Render_Generation() || asset_generation != HDAsset::Invalidation_Generation()) {
+		entries.clear();
+		bytes = 0;
+		generation = Render_Generation();
+		asset_generation = HDAsset::Invalidation_Generation();
+	}
+	if (Get_Render_Settings().Mode != RenderMode::HD) return this;
+	auto pin = HDAsset::Fetch(this);
+	if (!pin || pin->Type != HDAsset::Kind::VOXEL) return this;
+	auto const * variant = HDAsset::Select_Variant(*pin, Render_Art_Scale(RenderDomain::World));
+	if (!variant) return this;
+	for (auto const & entry : entries) if (entry.Pack == pin && entry.Variant == variant) return entry.Library.get();
+	std::size_t const budget = std::min<std::size_t>(Get_Render_Settings().CacheBudgetBytes / 4, 32u * 1024u * 1024u);
+	if (entries.size() >= 64 || variant->Voxel.size() * 2 > budget - std::min(budget, bytes)) {
+		HDAsset::Report_Fallback(pin->Name.c_str(), "decoded voxel cache budget exhausted");
+		return this;
+	}
+	RAMFileClass file(const_cast<unsigned char *>(variant->Voxel.data()), static_cast<int>(variant->Voxel.size()));
+	auto replacement = std::make_unique<VoxelLibrary>(file);
+	if (replacement->Load_Failed() || replacement->LayerCount != LayerCount || replacement->LayerInfoCount != LayerInfoCount) {
+		HDAsset::Report_Fallback(pin->Name.c_str(), "voxel layer topology differs from classic");
+		return this;
+	}
+	for (unsigned layer = 0; layer < LayerCount; ++layer) {
+		if (replacement->LayerHeaders[layer].InfoIndex != LayerHeaders[layer].InfoIndex) {
+			HDAsset::Report_Fallback(pin->Name.c_str(), "voxel layer info mapping differs from classic");
+			return this;
+		}
+	}
+	for (unsigned info = 0; info < LayerInfoCount; ++info) {
+		auto & visual = replacement->LayerInfos[info];
+		auto const & logical = LayerInfos[info];
+		std::copy(std::begin(logical.BoxCorner), std::end(logical.BoxCorner), std::begin(visual.BoxCorner));
+		visual.Scale = logical.Scale;
+		visual.Transform = logical.Transform;
+	}
+	bytes += replacement->Memory_Used() + variant->Voxel.size();
+	auto * result = replacement.get();
+	entries.push_back({std::move(pin), variant, std::move(replacement)});
+	return result;
+}
+
+
 /// <summary>
 /// Fetches the header of one voxel layer.
 /// </summary>
@@ -759,9 +832,90 @@ int VoxelLibrary::Memory_Used(void)
 /// </summary>
 /// <param name="voxel">The render request, naming the layer and its transformed corners.</param>
 /// <param name="center">The point the projection is centered about.</param>
+struct DenseVoxelRaster {
+	int Density;
+	int Pitch;
+	unsigned char * Pixels;
+	unsigned char * Depth;
+};
+
+
+static void Stamp_Dense_Voxel(DenseVoxelRaster const & raster, Vector3 const & position, unsigned char color, int width)
+{
+	int const density = raster.Density;
+	int const pitch = raster.Pitch;
+	int const px = static_cast<int>(std::floor(position.X * density));
+	int const py = static_cast<int>(std::floor(position.Y * density));
+	unsigned char const depth = static_cast<unsigned char>(std::clamp(static_cast<int>(position.Z), 0, 255));
+	auto * pixels = raster.Pixels;
+	auto * depths = raster.Depth;
+	for (int y = std::max(0, py); y < std::min(pitch, py + density); ++y) {
+		for (int x = std::max(0, px); x < std::min(pitch, px + width * density); ++x) {
+			int const index = y * pitch + x;
+			if (!VoxelDrawSystem::EnableZBuffer || depth > depths[index]) {
+				pixels[index] = color;
+				if (VoxelDrawSystem::EnableZBuffer) depths[index] = depth;
+			}
+		}
+	}
+}
+
+
+static void Draw_Dense_Voxel(VoxelLibrary::LayerInfoStruct const & info, VoxelRenderStruct const & voxel, Vector3 const & center)
+{
+	if (!info.XSize || !info.YSize || !info.ZSize) return;
+	int const density = VoxelDrawSystem::Raster_Density();
+	DenseVoxelRaster const raster{density, VOXEL_BITMAP_WIDTH * density, VoxelDrawSystem::Raster_Buffer(), VoxelDrawSystem::Raster_Depth_Buffer()};
+	auto const & orientation = VoxelRenderOrientations[voxel.AnchorCornerIndex];
+	Vector3 const origin = voxel.BoxCorner[orientation.Corner0] - center + Vector3(128, 128, 128);
+	Vector3 const dx = (voxel.BoxCorner[orientation.CornerX] - voxel.BoxCorner[orientation.Corner0]) / info.XSize;
+	Vector3 const dy = (voxel.BoxCorner[orientation.CornerY] - voxel.BoxCorner[orientation.Corner0]) / info.YSize;
+	Vector3 const dz = (voxel.BoxCorner[orientation.CornerZ] - voxel.BoxCorner[orientation.Corner0]) / info.ZSize;
+	bool const reverse = orientation.Reversed;
+	bool const normals = info.NormalType != 0;
+	auto const * offsets = reinterpret_cast<int const *>(reverse ? info.EndOffset : info.StartOffset);
+	int rowindex = (info.XSize - 1) * orientation.ZIndexFactor + info.XSize * (info.YSize - 1) * orientation.YIndexFactor;
+	for (int y = 0; y < info.YSize; ++y) {
+		int index = rowindex;
+		for (int x = 0; x < info.XSize; ++x, index += orientation.XIndexStride) {
+			if (offsets[index] < 0) continue;
+			auto const * pointer = info.DataOffset + offsets[index];
+			int z = 0;
+			while (z < info.ZSize) {
+				if (!reverse) z += *pointer++;
+				int const count = *pointer;
+				pointer += reverse ? -1 : 1;
+				if (z + count > info.ZSize) break;
+				for (int n = 0; n < count; ++n, ++z) {
+					unsigned char color, normal = 0;
+					if (reverse) {
+						if (normals) normal = *pointer--;
+						color = *pointer--;
+					} else {
+						color = *pointer++;
+						if (normals) normal = *pointer++;
+					}
+					if (normals && VoxelDrawSystem::EnableLighting) color = VoxelPaletteTranslateTable[VoxelNormalTranslateTable[normal]][color];
+					Stamp_Dense_Voxel(raster, origin + dx * x + dy * y + dz * z, color, normals ? 2 : 1);
+				}
+				pointer += reverse ? -1 : 1;
+				int const skip = reverse ? *pointer-- : 0;
+				z += skip;
+				if (!count && !skip && reverse) break;
+			}
+		}
+		rowindex += info.XSize * orientation.YIndexStride;
+	}
+}
+
+
 void VoxelLibrary::Render_Object(VoxelRenderStruct & voxel, Vector3 & center)
 {
 	LayerInfoStruct const & layerinfo = Get_Layer_Info(voxel.Layer, voxel.Info);
+	if (VoxelDrawSystem::Raster_Density() > 1) {
+		Draw_Dense_Voxel(layerinfo, voxel, center);
+		return;
+	}
 	int orientation = voxel.AnchorCornerIndex;
 
 	VoxelFuncArgumentStruct arg;
@@ -882,6 +1036,19 @@ static void __cdecl _voxel_draw_shadow(VoxelFuncArgumentStruct * state)
 void VoxelLibrary::Render_Shadow(VoxelShadowRenderStruct & voxel, Vector3 & center)
 {
 	LayerInfoStruct const & layerinfo = Get_Layer_Info(voxel.Layer, voxel.Info);
+	if (VoxelDrawSystem::Raster_Density() > 1) {
+		if (!layerinfo.XSize || !layerinfo.YSize) return;
+		int const density = VoxelDrawSystem::Raster_Density();
+		DenseVoxelRaster const raster{density, VOXEL_BITMAP_WIDTH * density, VoxelDrawSystem::Raster_Buffer(), VoxelDrawSystem::Raster_Depth_Buffer()};
+		Vector3 const origin = voxel.ShadowCorner[2] - center + Vector3(128, 128, 128);
+		Vector3 const dx = (voxel.ShadowCorner[1] - voxel.ShadowCorner[2]) / layerinfo.XSize;
+		Vector3 const dy = (voxel.ShadowCorner[3] - voxel.ShadowCorner[2]) / layerinfo.YSize;
+		auto const * offsets = reinterpret_cast<int const *>(layerinfo.EndOffset);
+		for (int y = 0; y < layerinfo.YSize; ++y) {
+			for (int x = 0; x < layerinfo.XSize; ++x) if (offsets[y * layerinfo.XSize + x] >= 0) Stamp_Dense_Voxel(raster, origin + dx * x + dy * y, 1, 2);
+		}
+		return;
+	}
 
 	VoxelFuncArgumentStruct arg;
 

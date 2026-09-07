@@ -14,6 +14,7 @@
 #include "bsurface.h"
 
 #include <cstdlib>
+#include <stdexcept>
 
 #define ABUFFER_COLOR  0x007F
 #define ABUFFER_MAX    0x8000
@@ -28,10 +29,16 @@
 /// neutral alpha level.
 /// </summary>
 /// <param name="rect">The area the buffer is to cover.</param>
-ABuffer::ABuffer(Rect rect) :
-	BufferWidth(rect.Width),
-	BufferHeight(rect.Height)
+ABuffer::ABuffer(Rect rect, int density) :
+	BufferWidth(0),
+	BufferHeight(0),
+	RasterScale(density)
 {
+	if (density < 1 || density > 4 || rect.Width <= 0 || rect.Height <= 0 || rect.Width > 16384 / density || rect.Height > 16384 / density) {
+		throw std::invalid_argument("Invalid raster ring dimensions");
+	}
+	BufferWidth = rect.Width * density;
+	BufferHeight = rect.Height * density;
 	Bounds = rect;
 	BufferSize = BufferWidth * BufferHeight * ABUFFER_BPP;
 	SurfacePtr = new BSurface(BufferWidth, BufferHeight, ABUFFER_BPP);
@@ -56,6 +63,7 @@ ABuffer::ABuffer(Rect rect) :
 /// <param name="rect">The region of the destination surface to copy into.</param>
 void ABuffer::Copy_To(Surface *surface, Rect rect)
 {
+	rect = Rect(rect.X * RasterScale, rect.Y * RasterScale, rect.Width * RasterScale, rect.Height * RasterScale);
 	//if (!surface) return;
 
 	unsigned short *surfbuffptr = (unsigned short *)(surface->Lock(Point2D(rect.X, rect.Y)));
@@ -150,8 +158,8 @@ void ABuffer::Pan(int x, int y, unsigned short value)
 {
 	int target_col;
 	int target_row;
-	int x_delta = x;
-	int y_delta = y;
+	int x_delta = x * RasterScale;
+	int y_delta = y * RasterScale;
 
 	/// The column the buffer origin currently sits on.
 	int current_col = (SurfaceOffset / ABUFFER_BPP) % BufferWidth;
@@ -176,21 +184,21 @@ void ABuffer::Pan(int x, int y, unsigned short value)
 			/// exposed strip straddles the wrap point.
 			if (x_delta < 0) {
 				if (target_col < 0) {
-					Fill(value, Rect(0, 0, current_col, BufferHeight));
+					Fill_Raster(value, Rect(0, 0, current_col, BufferHeight));
 					target_col += BufferWidth;
-					Fill(value, Rect(target_col, 0, BufferWidth - target_col, BufferHeight));
+					Fill_Raster(value, Rect(target_col, 0, BufferWidth - target_col, BufferHeight));
 
 				} else {
-					Fill(value, Rect(target_col, 0, -x_delta, BufferHeight));
+					Fill_Raster(value, Rect(target_col, 0, -x_delta, BufferHeight));
 				}
 
 			} else if (target_col >= BufferWidth) {
-				Fill(value, Rect(current_col, 0, BufferWidth - current_col, BufferHeight));
+				Fill_Raster(value, Rect(current_col, 0, BufferWidth - current_col, BufferHeight));
 				target_col -= BufferWidth;
-				Fill(value, Rect(0, 0, target_col, BufferHeight));
+				Fill_Raster(value, Rect(0, 0, target_col, BufferHeight));
 
 			} else {
-				Fill(value, Rect(current_col, 0, x_delta, BufferHeight));
+				Fill_Raster(value, Rect(current_col, 0, x_delta, BufferHeight));
 			}
 		}
 
@@ -202,7 +210,7 @@ void ABuffer::Pan(int x, int y, unsigned short value)
 
 			/// The alpha buffer has no use for the scroll bias itself, but keeps it in
 			/// step with the depth buffer's.
-			ScrollOffset -= y_delta;
+			ScrollOffset -= y;
 
 			int prev_offset = SurfaceOffset;
 
@@ -255,6 +263,12 @@ bool ABuffer::Fill(unsigned short value)
 /// <returns>bool; Was the region filled?</returns>
 bool ABuffer::Fill(unsigned short value, Rect rect)
 {
+	return Fill_Raster(value, Rect(rect.X * RasterScale, rect.Y * RasterScale, rect.Width * RasterScale, rect.Height * RasterScale));
+}
+
+
+bool ABuffer::Fill_Raster(unsigned short value, Rect rect)
+{
 	return(SurfacePtr->Fill_Rect(rect, value));
 }
 
@@ -269,6 +283,8 @@ bool ABuffer::Fill(unsigned short value, Rect rect)
 void ABuffer::Update(Rect rect)
 {
 	std::uintptr_t buffptr = Get_Buffer_Offset(Point2D(rect.X, rect.Y));
+	rect.Width *= RasterScale;
+	rect.Height *= RasterScale;
 
 	for (int i = 0; i < rect.Height; ++i) {
 
@@ -296,10 +312,12 @@ void ABuffer::Update(Rect rect)
 /// <returns>Returns with the address of the pixel within the alpha buffer.</returns>
 std::uintptr_t ABuffer::Get_Buffer_Offset(Point2D pos)
 {
-	std::uintptr_t buffptr = (std::uintptr_t)SurfacePtr->Lock(pos);
+	return Get_Raster_Offset(Point2D(pos.X * RasterScale, pos.Y * RasterScale));
+}
 
-	SurfacePtr->Unlock();
 
-	buffptr += SurfaceOffset;
+std::uintptr_t ABuffer::Get_Raster_Offset(Point2D pos)
+{
+	std::uintptr_t buffptr = BufferStart + SurfaceOffset + (static_cast<std::intptr_t>(pos.Y) * BufferWidth + pos.X) * ABUFFER_BPP;
 	return(Wrap_Overflow(buffptr));
 }
